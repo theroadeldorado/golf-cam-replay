@@ -17,8 +17,8 @@ def test_app_config_defaults():
     cfg = AppConfig()
 
     assert cfg.fps == 30
-    assert cfg.pre_trigger_seconds == 2.0
-    assert cfg.post_trigger_seconds == 4.0
+    assert cfg.pre_trigger_seconds == 1.0
+    assert cfg.post_trigger_seconds == 1.33
     assert cfg.audio_threshold == 0.3
     assert cfg.audio_sample_rate == 44100
     assert cfg.audio_chunk_size == 1024

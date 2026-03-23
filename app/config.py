@@ -57,7 +57,7 @@ class AppConfig:
     """Application configuration settings."""
     # Recording settings
     pre_trigger_seconds: float = 1.0
-    post_trigger_seconds: float = 2.0
+    post_trigger_seconds: float = 1.33
     fps: int = 30
 
     # Audio settings

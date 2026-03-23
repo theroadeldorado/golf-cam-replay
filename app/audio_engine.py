@@ -185,19 +185,24 @@ class AudioClassifier:
         return self._classify_heuristic(features)
 
     def _classify_heuristic(self, f: Dict[str, float]) -> float:
-        """Score using hand-tuned rules. Threshold at 0.45."""
+        """Score using hand-tuned rules. Threshold at 0.45.
+
+        Covers both irons (sharp click, energy in 2-6kHz) and drivers
+        (deeper thwack, more energy in 500-2kHz, lower spectral centroid).
+        """
         score = 0.0
 
-        # Crest factor: impulsive sounds have high crest factor (>4 is typical for impacts)
+        # Crest factor: impulsive sounds have high crest factor
+        # Drivers tend lower (3-6) than irons (>6)
         cf = f.get("crest_factor", 0)
         if cf > 6:
             score += 0.25
         elif cf > 4:
-            score += 0.15
+            score += 0.20
         elif cf > 3:
-            score += 0.05
+            score += 0.10
 
-        # Impact band ratio (2-6kHz): golf ball hit concentrates energy here
+        # Impact band ratio (2-6kHz): strong for irons
         ir = f.get("impact_ratio", 0)
         if ir > 0.3:
             score += 0.25
@@ -205,6 +210,13 @@ class AudioClassifier:
             score += 0.15
         elif ir > 0.08:
             score += 0.05
+
+        # Mid-frequency energy (500-2kHz): strong for drivers
+        mid_energy = f.get("energy_500_2k", 0)
+        if mid_energy > 0.3:
+            score += 0.15
+        elif mid_energy > 0.15:
+            score += 0.08
 
         # Rise time: impacts have very fast rise (<50 samples at 44.1kHz ~ <1.1ms)
         rt = f.get("rise_time", 9999)
@@ -220,11 +232,11 @@ class AudioClassifier:
         if 0.05 < zcr < 0.35:
             score += 0.10
 
-        # Spectral centroid: golf impacts typically 1.5-5kHz
+        # Spectral centroid: irons 1.5-5kHz, drivers can be lower (800-2kHz)
         sc = f.get("spectral_centroid", 0)
-        if 1500 < sc < 5000:
+        if 800 < sc < 5000:
             score += 0.15
-        elif 800 < sc < 7000:
+        elif 500 < sc < 7000:
             score += 0.05
 
         # Low-frequency dominance penalty (voices, wind)

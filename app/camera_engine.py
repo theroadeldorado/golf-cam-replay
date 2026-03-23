@@ -505,7 +505,7 @@ class PersonDetector:
         self._consecutive_present = 0
         self._consecutive_absent = 0
         self._presence_threshold = 3
-        self._absence_threshold = 6
+        self._absence_threshold = 12
         self._last_check_time = 0.0
         self._check_interval = 0.5  # seconds
 

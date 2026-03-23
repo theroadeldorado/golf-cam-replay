@@ -277,6 +277,7 @@ class PiPWindow(QWidget):
 
     closed = pyqtSignal()
     camera_toggled = pyqtSignal(object, bool)  # (cam_id, checked)
+    pin_toggled = pyqtSignal()
 
     TITLE_HEIGHT = 24
     RESIZE_MARGIN = 6  # pixels from edge to trigger resize
@@ -376,6 +377,30 @@ class PiPWindow(QWidget):
         container_layout.addWidget(self._panels_widget, stretch=1)
 
         layout.addWidget(self.container)
+
+        # Shot overlay bar (floats on top of video panels)
+        self._shot_overlay = QWidget(self._panels_widget)
+        self._shot_overlay.setStyleSheet("background-color: rgba(0, 0, 0, 120); border: none;")
+        self._shot_overlay.setFixedHeight(28)
+        self._shot_overlay.hide()
+        overlay_layout = QHBoxLayout(self._shot_overlay)
+        overlay_layout.setContentsMargins(8, 0, 4, 0)
+        overlay_layout.setSpacing(4)
+        self._shot_label = QLabel("")
+        self._shot_label.setStyleSheet("color: white; font-weight: bold; font-size: 12px; background: transparent; border: none;")
+        overlay_layout.addWidget(self._shot_label)
+        self._star_btn = QPushButton("\u2606")
+        self._star_btn.setFixedSize(24, 24)
+        self._star_btn.setStyleSheet(
+            "QPushButton { color: white; font-size: 16px; background: transparent; border: none; padding: 0px; }"
+            "QPushButton:hover { color: #ffd700; }"
+        )
+        self._star_btn.clicked.connect(self._on_star_clicked)
+        overlay_layout.addWidget(self._star_btn)
+        overlay_layout.addStretch()
+
+        self._current_shot_number = ""
+        self._current_pinned = False
 
         self._drag_pos = None
         self._resize_edge = None  # which edge(s) are being dragged
@@ -611,6 +636,33 @@ class PiPWindow(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._fit_panels()
+        self._position_overlay()
+
+    def set_shot_info(self, shot_number: str, pinned: bool):
+        """Show shot number and pin state in the overlay bar."""
+        self._current_shot_number = shot_number
+        self._current_pinned = pinned
+        self._shot_label.setText(f"Shot {shot_number}")
+        self._star_btn.setText("\u2605" if pinned else "\u2606")
+        self._shot_overlay.show()
+        self._position_overlay()
+
+    def hide_shot_info(self):
+        """Hide the shot overlay bar."""
+        self._shot_overlay.hide()
+
+    def _on_star_clicked(self):
+        self.pin_toggled.emit()
+
+    def _position_overlay(self):
+        """Position the overlay at the bottom of the panels widget."""
+        if not self._shot_overlay.isVisible():
+            return
+        pw = self._panels_widget
+        w = pw.width()
+        y = pw.height() - self._shot_overlay.height()
+        self._shot_overlay.setGeometry(0, y, w, self._shot_overlay.height())
+        self._shot_overlay.raise_()
 
     def closeEvent(self, event):
         self.closed.emit()

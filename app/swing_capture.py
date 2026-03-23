@@ -1956,18 +1956,22 @@ class MainWindow(QMainWindow):
 
     def _on_person_state_changed(self, present: bool):
         self.person_detected = present
+        # Check if user is reviewing a clip (playback loaded) — suppress
+        # auto-arm/disarm toggling so the user can freely play/pause/scrub
+        # without losing armed state or getting unexpectedly re-armed.
+        has_playback = self.playback_frames or (self.playback_multi_view and self.playback_all_frames)
         if present:
             self.person_status_label.setText("Person: DETECTED")
             self.person_status_label.setStyleSheet("color: #34d17e; font-size: 11px; padding: 2px 0;")
             logger.info("Person detected - auto-arming")
-            if not self.is_armed:
+            if not self.is_armed and not has_playback:
                 self.arm_btn.setChecked(True)
                 self._toggle_armed()
         else:
             self.person_status_label.setText("Person: Not detected")
             self.person_status_label.setStyleSheet("color: #666; font-size: 11px; padding: 2px 0;")
             logger.info("Person left - auto-disarming")
-            if self.is_armed and not self.is_recording:
+            if self.is_armed and not self.is_recording and not has_playback:
                 self.arm_btn.setChecked(False)
                 self._toggle_armed()
 
@@ -2328,6 +2332,7 @@ class MainWindow(QMainWindow):
             self.playback_slider.setValue(0)
             self.frame_label.setText(f"1 / {len(self.playback_frames)}")
             self.playback_clip_index = index
+            self._update_pip_shot_info()
 
             self.play_btn.setChecked(True)
             self._toggle_playback()
@@ -2438,12 +2443,14 @@ class MainWindow(QMainWindow):
             self.pip_window = PiPWindow()
             self.pip_window.closed.connect(self._on_pip_closed)
             self.pip_window.camera_toggled.connect(self._on_pip_camera_toggled)
+            self.pip_window.pin_toggled.connect(self._on_pip_pin_toggled)
 
         if self.pip_window.isVisible():
             self.pip_window.hide()
         else:
             self._sync_pip_cameras()
             self.pip_window.show()
+            self._update_pip_shot_info()
 
     def _sync_pip_cameras(self):
         """Push connected camera list and visibility to PiP window."""
@@ -2468,6 +2475,32 @@ class MainWindow(QMainWindow):
 
     def _on_pip_closed(self):
         pass
+
+    def _on_pip_pin_toggled(self):
+        """Handle star button click in PiP overlay."""
+        if self.playback_clip_index >= 0:
+            self._on_clip_pin_toggled(self.playback_clip_index)
+            self._update_pip_shot_info()
+
+    def _update_pip_shot_info(self):
+        """Update PiP overlay with current clip's shot number and pin state."""
+        if not self.pip_window or not self.pip_window.isVisible():
+            return
+        if self.playback_clip_index < 0:
+            self.pip_window.hide_shot_info()
+            return
+        visible = self.recording_manager.get_visible_clips()
+        if self.playback_clip_index >= len(visible):
+            self.pip_window.hide_shot_info()
+            return
+        clip = visible[self.playback_clip_index]
+        shot_num = clip["file"].replace("shot_", "").replace(".mp4", "")
+        try:
+            shot_display = str(int(shot_num))
+        except (ValueError, TypeError):
+            shot_display = shot_num
+        pinned = bool(clip.get("pinned"))
+        self.pip_window.set_shot_info(shot_display, pinned)
 
     # ------------------------------------------------------------------
     # Comparison
@@ -2619,6 +2652,8 @@ class MainWindow(QMainWindow):
         self.playback_active_camera = None
         self.playback_multi_view = False
         self.playback_clip_index = -1
+        if self.pip_window and self.pip_window.isVisible():
+            self.pip_window.hide_shot_info()
         self.is_playing = False
         self.playback_timer.stop()
         self.play_btn.setChecked(False)
