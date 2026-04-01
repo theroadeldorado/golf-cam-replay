@@ -16,7 +16,11 @@ from urllib.error import URLError
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
 from PyQt6.QtCore import QThread, pyqtSignal, Qt
 
-from version import __version__, is_newer
+from version import __version__
+try:
+    from version import is_newer
+except ImportError:
+    is_newer = None
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +76,10 @@ class UpdateChecker(QThread):
 
     def run(self):
         try:
+            if is_newer is None:
+                logger.debug("is_newer not available, skipping update check")
+                return
+
             state = _load_update_state()
             if _is_throttled(state):
                 logger.debug("Update check throttled, skipping")

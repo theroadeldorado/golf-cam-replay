@@ -32,7 +32,7 @@ jobs:
       - name: Stamp version
         run: |
           $ver = "${{ github.event.release.tag_name }}" -replace '^v',''
-          Set-Content -Path version.py -Value "__version__ = `"$ver`""
+          (Get-Content version.py) -replace '__version__ = ".*"', "__version__ = `"$ver`"" | Set-Content version.py
 
       - name: Build executable
         run: |
