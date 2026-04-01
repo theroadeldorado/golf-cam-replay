@@ -871,26 +871,30 @@ class CameraSettingsDialog(QDialog):
 
     def _detect_usb(self):
         existing_usb_ids = {p.id for p in self._presets if p.type == "usb"}
-        for i in range(10):
-            if i in existing_usb_ids:
-                continue
-            found = False
-            if sys.platform == "win32":
-                backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
-            else:
-                backends = [cv2.CAP_ANY]
-            for backend in backends:
-                cap = cv2.VideoCapture(i, backend)
-                try:
+        if sys.platform == "win32":
+            backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
+        else:
+            backends = [cv2.CAP_ANY]
+
+        # Hold found cameras open while scanning so the same physical
+        # device can't respond at multiple indices.
+        held_open: list = []
+        try:
+            for i in range(10):
+                if i in existing_usb_ids:
+                    continue
+                for backend in backends:
+                    cap = cv2.VideoCapture(i, backend)
                     if cap.isOpened():
                         ret, _ = cap.read()
                         if ret:
                             self._presets.append(CameraPreset(id=i, type="usb", label=f"USB Camera {i}"))
-                            found = True
+                            held_open.append(cap)
                             break
-                finally:
                     cap.release()
-            # Already found, skip remaining backends
+        finally:
+            for cap in held_open:
+                cap.release()
         self._refresh_list()
 
     def _remove_camera(self):
