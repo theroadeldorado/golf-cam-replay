@@ -1564,6 +1564,11 @@ class MainWindow(QMainWindow):
         self.playback_timer = QTimer()
         self.playback_timer.timeout.connect(self._playback_tick)
 
+        # Retry dead camera threads every 10 seconds
+        self._camera_retry_timer = QTimer()
+        self._camera_retry_timer.timeout.connect(self._retry_dead_cameras)
+        self._camera_retry_timer.start(10000)
+
     # ------------------------------------------------------------------
     # Keyboard Shortcuts
     # ------------------------------------------------------------------
@@ -1762,6 +1767,31 @@ class MainWindow(QMainWindow):
             self.live_visible_cameras.discard(cam_id)
             self._rebuild_camera_dropdown()
             self._sync_pip_cameras()
+
+    def _retry_dead_cameras(self):
+        """Restart camera threads that have exited (failed to open or crashed).
+
+        Runs on a 10-second timer so cameras plugged in or started after the
+        app launches (e.g. DroidCam) are picked up automatically.
+        """
+        restarted = False
+        for preset in self.config.cameras:
+            cam_id = preset.id
+            capture = self.camera_captures.get(cam_id)
+            if capture is not None and not capture.isRunning():
+                # Thread exists but has exited — clean up and restart
+                logger.info("Camera %s thread died, restarting...", preset.label or cam_id)
+                del self.camera_captures[cam_id]
+                self.frame_buffers.pop(cam_id, None)
+                self.current_frames.pop(cam_id, None)
+                self.camera_fps.pop(cam_id, None)
+                self._start_camera(preset)
+                restarted = True
+
+        if restarted:
+            self._update_camera_status()
+            # Re-check device status after a few seconds to auto-dismiss warning
+            QTimer.singleShot(5000, self._check_device_status)
 
     def _on_fps_update(self, camera_id, fps: float):
         self.camera_fps[camera_id] = fps
@@ -2925,7 +2955,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _check_device_status(self):
-        """Show a warning banner if camera or microphone is missing."""
+        """Show or dismiss warning banner based on camera/mic status."""
         problems = []
 
         # Check camera — have we received at least one frame?
@@ -2941,6 +2971,11 @@ class MainWindow(QMainWindow):
                 problems.append("No microphone detected")
 
         if not problems:
+            # Everything is fine — dismiss banner if it was showing
+            if self._device_warning_banner is not None:
+                self._device_warning_banner.setVisible(False)
+                self._device_warning_banner.deleteLater()
+                self._device_warning_banner = None
             return
 
         self._show_device_warning(problems)
@@ -3045,6 +3080,7 @@ class MainWindow(QMainWindow):
         self.display_timer.stop()
         self.recording_timer.stop()
         self.playback_timer.stop()
+        self._camera_retry_timer.stop()
 
         for capture in list(self.camera_captures.values()):
             capture.stop()
