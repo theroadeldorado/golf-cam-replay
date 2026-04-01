@@ -24,7 +24,7 @@ export async function getLatestRelease(): Promise<ReleaseInfo | null> {
       'https://api.github.com/repos/theroadeldorado/replay-swing/releases?per_page=5',
       {
         headers,
-        next: { revalidate: 3600 },
+        next: { revalidate: 60 },
       }
     );
 
