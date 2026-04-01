@@ -1029,7 +1029,9 @@ class MainWindow(QMainWindow):
 
         self._update_checker = None
         self._update_banner = None
+        self._device_warning_banner = None
         QTimer.singleShot(3000, self._check_for_updates)
+        QTimer.singleShot(5000, self._check_device_status)
 
         logger.info("ReplaySwing v%s started (session: %s)", __version__, self.config.session_folder)
 
@@ -2917,6 +2919,84 @@ class MainWindow(QMainWindow):
             self._on_clip_share_requested(self.playback_clip_index)
         else:
             QMessageBox.information(self, "Share", "Select a clip first.")
+
+    # ------------------------------------------------------------------
+    # Device Status Check
+    # ------------------------------------------------------------------
+
+    def _check_device_status(self):
+        """Show a warning banner if camera or microphone is missing."""
+        problems = []
+
+        # Check camera — have we received at least one frame?
+        if not self.current_frames:
+            problems.append("No camera detected")
+
+        # Check microphone
+        if not AUDIO_AVAILABLE:
+            problems.append("No microphone available (PyAudio not installed)")
+        else:
+            devices = enumerate_audio_devices()
+            if not devices:
+                problems.append("No microphone detected")
+
+        if not problems:
+            return
+
+        self._show_device_warning(problems)
+
+    def _show_device_warning(self, problems: list):
+        if self._device_warning_banner is not None:
+            return
+
+        if len(problems) == 1:
+            message = problems[0]
+        else:
+            message = " \u2022 ".join(problems)
+
+        banner = QFrame(self)
+        banner.setStyleSheet(
+            "QFrame {"
+            "  background-color: #3a2a1a;"
+            "  border: 1px solid #ff9f43;"
+            "  border-radius: 6px;"
+            "}"
+        )
+        banner.setFixedHeight(36)
+        layout = QHBoxLayout(banner)
+        layout.setContentsMargins(12, 0, 8, 0)
+        layout.setSpacing(8)
+
+        label = QLabel(f"\u26a0  {message}  — swing detection requires a camera and a microphone")
+        label.setStyleSheet("color: #ffcc80; font-size: 12px; border: none; background: transparent;")
+        layout.addWidget(label)
+        layout.addStretch()
+
+        settings_btn = QPushButton("Open Settings")
+        settings_btn.setStyleSheet(
+            "QPushButton { background-color: #ff9f43; color: #1c1c1c; border: none;"
+            " border-radius: 4px; padding: 4px 14px; font-size: 11px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #ffb76b; }"
+        )
+        settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        settings_btn.clicked.connect(self._show_camera_settings)
+        layout.addWidget(settings_btn)
+
+        close_btn = QPushButton("\u00d7")
+        close_btn.setFixedSize(20, 20)
+        close_btn.setStyleSheet(
+            "QPushButton { background-color: transparent; color: #7a7a7a; border: none;"
+            " font-size: 16px; font-weight: bold; padding: 0; }"
+            "QPushButton:hover { color: #d4d4d4; }"
+        )
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.clicked.connect(lambda: banner.setVisible(False))
+        layout.addWidget(close_btn)
+
+        self._device_warning_banner = banner
+        # Insert below update banner (position 0 or 1)
+        insert_pos = 1 if self._update_banner and self._update_banner.isVisible() else 0
+        self.left_layout.insertWidget(insert_pos, banner)
 
     # ------------------------------------------------------------------
     # Auto-Update
