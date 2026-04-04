@@ -392,7 +392,7 @@ class AudioDetector(QThread):
             return
 
         cooldown_time = 0
-        cooldown_duration = 3.0
+        cooldown_duration = self.config.trigger_cooldown
 
         try:
             while self.running:

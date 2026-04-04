@@ -1002,6 +1002,7 @@ class MainWindow(QMainWindow):
         self.is_recording = False
         self.recording_start_time = 0
         self.recorded_frames: Dict = {}
+        self._last_recording_end_time = 0.0
         self.last_trigger_confidence = 0.0
         self.last_trigger_timestamp: Optional[int] = None
 
@@ -1846,21 +1847,38 @@ class MainWindow(QMainWindow):
             self._sync_pip_cameras()
 
     def _retry_dead_cameras(self):
-        """Restart camera threads that have exited (failed to open or crashed).
+        """Restart camera threads that have exited or become zombies.
 
         Runs on a 10-second timer so cameras plugged in or started after the
         app launches (e.g. DroidCam) are picked up automatically.
+
+        Also detects zombie threads: still running but 0 FPS and no current
+        frame (e.g. USB camera where cap.read() keeps failing silently).
         """
         restarted = False
         for preset in self.config.cameras:
             cam_id = preset.id
             capture = self.camera_captures.get(cam_id)
-            if capture is not None and not capture.isRunning():
+            if capture is None:
+                continue
+
+            if not capture.isRunning():
                 # Thread exists but has exited — clean up and restart
                 logger.info("Camera %s thread died, restarting...", preset.label or cam_id)
                 del self.camera_captures[cam_id]
                 self.frame_buffers.pop(cam_id, None)
                 self.current_frames.pop(cam_id, None)
+                self.camera_fps.pop(cam_id, None)
+                self._start_camera(preset)
+                restarted = True
+            elif (self.camera_fps.get(cam_id, 0.0) == 0.0
+                  and cam_id not in self.current_frames):
+                # Zombie: thread alive but producing nothing — force restart
+                logger.warning("Camera %s zombie detected (0 FPS, no frames), force-restarting...", preset.label or cam_id)
+                capture.running = False
+                capture.wait(3000)
+                del self.camera_captures[cam_id]
+                self.frame_buffers.pop(cam_id, None)
                 self.camera_fps.pop(cam_id, None)
                 self._start_camera(preset)
                 restarted = True
@@ -2099,6 +2117,11 @@ class MainWindow(QMainWindow):
         self.last_confidence_label.setText(f"Last trigger confidence: {confidence:.0%}")
 
         if self.is_armed and not self.is_recording:
+            # Recording-level cooldown: suppress triggers too close to last recording end
+            cooldown_remaining = (self._last_recording_end_time + self.config.post_trigger_seconds + 1.0) - time.time()
+            if cooldown_remaining > 0:
+                logger.debug("Trigger suppressed (recording cooldown: %.1fs remaining)", cooldown_remaining)
+                return
             logger.info("Trigger! confidence=%.2f", confidence)
             self._start_recording()
 
@@ -2117,10 +2140,34 @@ class MainWindow(QMainWindow):
         self.recording_start_time = time.time()
         self.recorded_frames = {}
 
-        # Grab pre-trigger buffers from all cameras that have frames
+        # Grab pre-trigger buffers, skipping dead cameras
+        skipped = []
         for cam_id, buffer in self.frame_buffers.items():
+            fps = self.camera_fps.get(cam_id, 0.0)
+            has_current = cam_id in self.current_frames
+
+            # Skip cameras with 0 FPS and no current frame (dead)
+            if fps <= 0.0 and not has_current:
+                label = cam_id
+                for p in self.config.cameras:
+                    if p.id == cam_id:
+                        label = p.label or str(cam_id)
+                        break
+                skipped.append(label)
+                continue
+
+            # Skip cameras whose newest buffered frame is stale (>5s old)
             frames = buffer.get_frames()
             if frames:
+                newest_ts = frames[-1][1] if isinstance(frames[-1], tuple) else 0
+                if newest_ts > 0 and (time.time() - newest_ts) > 5.0:
+                    label = cam_id
+                    for p in self.config.cameras:
+                        if p.id == cam_id:
+                            label = p.label or str(cam_id)
+                            break
+                    skipped.append(label)
+                    continue
                 self.recorded_frames[cam_id] = frames
             else:
                 # Camera configured but no frames yet - initialize empty list
@@ -2128,12 +2175,15 @@ class MainWindow(QMainWindow):
                 self.recorded_frames[cam_id] = []
                 logger.debug("Camera %s has no pre-trigger frames", cam_id)
 
+        if skipped:
+            logger.warning("Skipped dead cameras from recording: %s", ", ".join(str(s) for s in skipped))
+
         self.status_label.setText("\u25cf  Recording...")
         self.status_label.setStyleSheet(
             "QLabel { background-color: transparent; padding: 4px 8px; font-size: 12px; "
             "font-weight: 600; color: #e84c3c; }"
         )
-        logger.info("Recording started (%d cameras)", len(self.recorded_frames))
+        logger.info("Recording started (%d cameras, %d skipped)", len(self.recorded_frames), len(skipped))
 
     def _check_recording(self):
         if self.is_recording:
@@ -2143,6 +2193,7 @@ class MainWindow(QMainWindow):
 
     def _stop_recording(self):
         self.is_recording = False
+        self._last_recording_end_time = time.time()
 
         # Build camera labels from config
         camera_labels = {}

@@ -225,8 +225,7 @@ class CameraCapture(QThread):
                 self._reconnect_loop()
             return
 
-        if is_network:
-            self.connection_state.emit(self.camera_id, "connected")
+        self.connection_state.emit(self.camera_id, "connected")
         logger.info("Camera %s opened successfully", self.camera_id)
 
         if not is_network:
@@ -300,9 +299,27 @@ class CameraCapture(QThread):
                         total_frames = 0
                         fps_frame_count = 0
                         fps_interval_start = time.time()
+                    elif not is_network and consecutive_failures > 30:
+                        logger.warning("USB camera %s: %d consecutive failures, attempting reconnect...", self.camera_id, consecutive_failures)
+                        self.connection_state.emit(self.camera_id, "disconnected")
+                        self.cap.release()
+                        self._reconnect_usb()
+                        if not self.running:
+                            return
+                        if self.cap is None or not self.cap.isOpened():
+                            logger.error("USB camera %s: reconnect failed, exiting thread", self.camera_id)
+                            return
+                        self.connection_state.emit(self.camera_id, "connected")
+                        consecutive_failures = 0
+                        total_frames = 0
+                        fps_frame_count = 0
+                        fps_interval_start = time.time()
                     elif is_network:
                         # Small sleep on failure to avoid tight-looping
                         time.sleep(0.05)
+                    else:
+                        # USB failure below threshold — sleep to prevent busy-loop
+                        time.sleep(0.1)
 
                 # FPS calculation and logging
                 now = time.time()
@@ -433,6 +450,23 @@ class CameraCapture(QThread):
             self.cap = self._open_network_camera(self.camera_id)
             if self.cap is not None and self.cap.isOpened():
                 logger.info("Reconnected to %s", self.camera_id)
+                return
+            backoff = min(backoff * 2, 30.0)
+
+    def _reconnect_usb(self):
+        """Try to reconnect to a USB camera with exponential backoff."""
+        backoff = 1.0
+        attempts = 0
+        while self.running:
+            attempts += 1
+            self.connection_state.emit(self.camera_id, "connecting")
+            logger.info("USB reconnect attempt #%d for camera %s (waiting %.0fs)...", attempts, self.camera_id, backoff)
+            time.sleep(backoff)
+            if not self.running:
+                return
+            self.cap = self._open_usb_camera(self.camera_id)
+            if self.cap is not None and self.cap.isOpened():
+                logger.info("USB camera %s reconnected", self.camera_id)
                 return
             backoff = min(backoff * 2, 30.0)
 

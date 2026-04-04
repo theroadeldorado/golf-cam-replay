@@ -66,6 +66,7 @@ class AppConfig:
     audio_chunk_size: int = 1024
     audio_device_index: Optional[int] = None
     audio_device_name: str = ""  # saved for matching across reboots (indices can change)
+    trigger_cooldown: float = 5.0  # seconds between triggers (audio engine + recording level)
 
     # Storage settings
     base_dir: str = ""  # empty = default ~/GolfSwings
@@ -120,6 +121,7 @@ class AppConfig:
         self.post_trigger_seconds = max(0.5, min(30.0, float(self.post_trigger_seconds)))
         self.audio_sample_rate = max(8000, min(96000, int(self.audio_sample_rate)))
         self.audio_chunk_size = max(256, min(8192, int(self.audio_chunk_size)))
+        self.trigger_cooldown = max(1.0, min(30.0, float(self.trigger_cooldown)))
 
     def get_camera_ids(self) -> list:
         """Return list of camera IDs (int or str)."""
@@ -146,6 +148,7 @@ class AppConfig:
             "pip_size": list(self.pip_size),
             "window_geometry": self.window_geometry,
             "drawing_overlays": self.drawing_overlays,
+            "trigger_cooldown": self.trigger_cooldown,
         }
 
     def update_from_dict(self, data: dict):
@@ -174,6 +177,8 @@ class AppConfig:
             self.window_geometry = data["window_geometry"]
         if "drawing_overlays" in data:
             self.drawing_overlays = data["drawing_overlays"]
+        if "trigger_cooldown" in data:
+            self.trigger_cooldown = float(data["trigger_cooldown"])
         self._validate()
 
 
