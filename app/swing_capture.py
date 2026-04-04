@@ -876,25 +876,36 @@ class CameraSettingsDialog(QDialog):
         else:
             backends = [cv2.CAP_ANY]
 
-        # Hold found cameras open while scanning so the same physical
-        # device can't respond at multiple indices.
-        held_open: list = []
-        try:
-            for i in range(10):
-                if i in existing_usb_ids:
-                    continue
-                for backend in backends:
-                    cap = cv2.VideoCapture(i, backend)
-                    if cap.isOpened():
-                        ret, _ = cap.read()
-                        if ret:
-                            self._presets.append(CameraPreset(id=i, type="usb", label=f"USB Camera {i}"))
-                            held_open.append(cap)
-                            break
-                    cap.release()
-        finally:
-            for cap in held_open:
+        # Phase 1: find all indices that respond
+        candidates = []  # [(index, cap, frame)]
+        for i in range(10):
+            if i in existing_usb_ids:
+                continue
+            for backend in backends:
+                cap = cv2.VideoCapture(i, backend)
+                if cap.isOpened():
+                    ret, frame = cap.read()
+                    if ret:
+                        candidates.append((i, cap, frame))
+                        break
                 cap.release()
+
+        # Phase 2: deduplicate by comparing frames — the same physical
+        # device opened at different indices produces near-identical images
+        accepted_frames = []  # downscaled frames of accepted cameras
+        for idx, cap, frame in candidates:
+            small = cv2.resize(frame, (64, 48)).astype(np.float32)
+            is_dup = False
+            for accepted in accepted_frames:
+                diff = np.mean(np.abs(small - accepted))
+                if diff < 20.0:
+                    is_dup = True
+                    break
+            if not is_dup:
+                self._presets.append(CameraPreset(id=idx, type="usb", label=f"USB Camera {idx}"))
+                accepted_frames.append(small)
+            cap.release()
+
         self._refresh_list()
 
     def _remove_camera(self):
@@ -1729,6 +1740,9 @@ class MainWindow(QMainWindow):
             self.config.cameras = [CameraPreset(id=0, type="usb", label="Default")]
             self.config.primary_camera = 0
 
+        # Deduplicate saved USB cameras that are the same physical device
+        self._dedup_usb_cameras()
+
         for preset in self.config.cameras:
             self._start_camera(preset)
 
@@ -1737,6 +1751,69 @@ class MainWindow(QMainWindow):
         self._rebuild_camera_dropdown()
         self._update_camera_status()
         self._refresh_phone_btn_state()
+
+    def _dedup_usb_cameras(self):
+        """Remove duplicate USB camera presets that map to the same physical device.
+
+        Opens each saved USB camera, reads a frame, and compares against
+        already-accepted cameras.  Duplicates are removed from the config
+        and settings are re-saved.
+        """
+        usb_presets = [p for p in self.config.cameras if p.type == "usb"]
+        if len(usb_presets) <= 1:
+            return
+
+        if sys.platform == "win32":
+            backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
+        else:
+            backends = [cv2.CAP_ANY]
+
+        accepted_ids = set()
+        accepted_frames = []
+        for preset in usb_presets:
+            frame = None
+            for backend in backends:
+                cap = cv2.VideoCapture(preset.id, backend)
+                if cap.isOpened():
+                    ret, f = cap.read()
+                    cap.release()
+                    if ret:
+                        frame = f
+                        break
+                cap.release()
+
+            if frame is None:
+                # Can't open — keep it so the retry timer can try later
+                accepted_ids.add(preset.id)
+                continue
+
+            small = cv2.resize(frame, (64, 48)).astype(np.float32)
+            is_dup = False
+            for accepted in accepted_frames:
+                diff = np.mean(np.abs(small - accepted))
+                if diff < 20.0:
+                    is_dup = True
+                    break
+
+            if not is_dup:
+                accepted_ids.add(preset.id)
+                accepted_frames.append(small)
+            else:
+                logger.info("Removing duplicate USB camera %s (same device as existing)",
+                            preset.label or preset.id)
+
+        if len(accepted_ids) < len(usb_presets):
+            self.config.cameras = [
+                p for p in self.config.cameras
+                if p.type != "usb" or p.id in accepted_ids
+            ]
+            # Make sure primary camera is still valid
+            all_ids = {p.id for p in self.config.cameras}
+            if self.config.primary_camera not in all_ids and self.config.cameras:
+                self.config.primary_camera = self.config.cameras[0].id
+            save_settings(self.config)
+            logger.info("Deduplicated USB cameras: %d unique devices",
+                        sum(1 for p in self.config.cameras if p.type == "usb"))
 
     def _start_camera(self, preset: CameraPreset):
         cam_id = preset.id
