@@ -681,6 +681,115 @@ class NetworkCameraDialog(QDialog):
 
 
 # ============================================================================
+# Camera Picker Dialog (live preview)
+# ============================================================================
+
+class _CameraPickerDialog(QDialog):
+    """Dialog that shows detected cameras with a live preview for identification."""
+
+    def __init__(self, cameras: list, slots_left: int, parent=None):
+        """
+        cameras: list of (index, resolution_str, cv2.VideoCapture)
+        slots_left: how many more cameras can be added (1 or 2)
+        """
+        super().__init__(parent)
+        self.setWindowTitle("Select Camera")
+        self.setMinimumSize(500, 420)
+        self.setStyleSheet("""
+            QDialog { background-color: #1c1c1c; }
+            QLabel { color: #d4d4d4; }
+            QListWidget {
+                background-color: #141414; border: 1px solid #3a3a3a;
+                border-radius: 4px; color: #d4d4d4; font-size: 13px;
+            }
+            QListWidget::item { padding: 6px; }
+            QListWidget::item:selected { background-color: #4a9eff; }
+            QPushButton {
+                background-color: #4a9eff; color: white; border: none;
+                border-radius: 4px; padding: 8px 16px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #5aafff; }
+        """)
+
+        self._cameras = cameras  # [(idx, res, cap), ...]
+        self._slots_left = slots_left
+        self.selected_indices = []
+
+        layout = QVBoxLayout(self)
+
+        hint = (f"Found {len(cameras)} camera(s). Select one to add:"
+                if slots_left == 1 else
+                f"Found {len(cameras)} camera(s). Select up to {slots_left} to add:")
+        layout.addWidget(QLabel(hint))
+
+        # Camera list
+        self._cam_list = QListWidget()
+        for idx, res, _ in cameras:
+            self._cam_list.addItem(f"USB Camera {idx}  ({res})")
+        if slots_left > 1:
+            self._cam_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
+        self._cam_list.currentRowChanged.connect(self._on_selection_changed)
+        layout.addWidget(self._cam_list)
+
+        # Live preview
+        self._preview_label = QLabel()
+        self._preview_label.setFixedHeight(240)
+        self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._preview_label.setStyleSheet(
+            "background-color: #0a0a0a; border: 1px solid #3a3a3a; border-radius: 4px;"
+        )
+        layout.addWidget(self._preview_label)
+
+        # Buttons
+        btn_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btn_box.accepted.connect(self._on_accept)
+        btn_box.rejected.connect(self.reject)
+        layout.addWidget(btn_box)
+
+        # Preview refresh timer
+        self._preview_timer = QTimer(self)
+        self._preview_timer.timeout.connect(self._refresh_preview)
+        self._preview_timer.start(66)  # ~15 fps
+
+        # Select first camera
+        self._cam_list.setCurrentRow(0)
+
+    def _on_selection_changed(self, row: int):
+        """Immediately refresh preview when a different camera is selected."""
+        self._refresh_preview()
+
+    def _refresh_preview(self):
+        row = self._cam_list.currentRow()
+        if row < 0 or row >= len(self._cameras):
+            return
+        _, _, cap = self._cameras[row]
+        ret, frame = cap.read()
+        if not ret or frame is None:
+            return
+
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb.shape
+        q_img = QImage(rgb.tobytes(), w, h, ch * w, QImage.Format.Format_RGB888)
+        scaled = q_img.scaled(
+            self._preview_label.size(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self._preview_label.setPixmap(QPixmap.fromImage(scaled))
+
+    def _on_accept(self):
+        self.selected_indices = [idx.row() for idx in self._cam_list.selectedIndexes()]
+        self._preview_timer.stop()
+        self.accept()
+
+    def reject(self):
+        self._preview_timer.stop()
+        super().reject()
+
+
+# ============================================================================
 # Camera Settings Dialog
 # ============================================================================
 
@@ -889,9 +998,8 @@ class CameraSettingsDialog(QDialog):
 
         # Scan indices 0-9, keeping accepted cameras held open so that
         # duplicate indices for the same physical device are blocked.
-        found = []  # [(index, resolution_str)]
+        found = []  # [(index, resolution_str, cap)]
         accepted_frames = []
-        held_caps = []
 
         for i in range(10):
             if i in existing_usb_ids:
@@ -925,58 +1033,32 @@ class CameraSettingsDialog(QDialog):
 
             if not is_dup:
                 h, w = frame.shape[:2]
-                found.append((i, f"{w}x{h}"))
+                found.append((i, f"{w}x{h}", cap))
                 accepted_frames.append(small)
-                held_caps.append(cap)
             else:
                 if cap:
                     cap.release()
-
-        # Release all held cameras
-        for cap in held_caps:
-            cap.release()
 
         if not found:
             QMessageBox.information(self, "No Cameras Found",
                                    "No new USB cameras detected.")
             return
 
-        # Show picker dialog
+        # Show picker dialog with live preview
         slots_left = 2 - len(self._presets)
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Select Camera")
-        dlg.setMinimumWidth(350)
-        dlg.setStyleSheet(self.styleSheet())
-        dlg_layout = QVBoxLayout(dlg)
+        dlg = _CameraPickerDialog(found, slots_left, self)
+        result = dlg.exec()
 
-        dlg_layout.addWidget(QLabel(
-            f"Found {len(found)} camera(s). Select one to add:"
-            if slots_left == 1 else
-            f"Found {len(found)} camera(s). Select up to {slots_left} to add:"
-        ))
+        # Release all held cameras
+        for _, _, cap in found:
+            cap.release()
 
-        cam_list = QListWidget()
-        for idx, res in found:
-            cam_list.addItem(f"USB Camera {idx}  ({res})")
-        if slots_left > 1:
-            cam_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
-        cam_list.setCurrentRow(0)
-        dlg_layout.addWidget(cam_list)
-
-        btn_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        btn_box.accepted.connect(dlg.accept)
-        btn_box.rejected.connect(dlg.reject)
-        dlg_layout.addWidget(btn_box)
-
-        if dlg.exec() != QDialog.DialogCode.Accepted:
+        if result != QDialog.DialogCode.Accepted:
             return
 
-        selected = cam_list.selectedIndexes()
-        for sel in selected[:slots_left]:
-            idx, res = found[sel.row()]
-            self._presets.append(CameraPreset(id=idx, type="usb", label=f"USB Camera {idx}"))
+        for idx in dlg.selected_indices:
+            cam_idx, res, _ = found[idx]
+            self._presets.append(CameraPreset(id=cam_idx, type="usb", label=f"USB Camera {cam_idx}"))
 
         self._refresh_list()
 
