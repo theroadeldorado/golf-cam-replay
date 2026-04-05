@@ -1188,6 +1188,7 @@ class MainWindow(QMainWindow):
         self.frame_buffers: Dict = {}
         self.camera_fps: Dict = {}  # cam_id -> latest measured FPS
         self._last_frame_time: Dict = {}  # cam_id -> time.time() of last frame
+        self._camera_start_time: Dict = {}  # cam_id -> time.time() when thread started
         self.audio_detector: Optional[AudioDetector] = None
         self.current_frames: Dict = {}
 
@@ -2046,6 +2047,7 @@ class MainWindow(QMainWindow):
         capture.connection_state.connect(self._on_camera_connection_state)
         capture.start()
         self.camera_captures[cam_id] = capture
+        self._camera_start_time[cam_id] = time.time()
 
         self.frame_buffers[cam_id] = FrameBuffer(
             self.config.pre_trigger_seconds, self.config.fps
@@ -2062,6 +2064,7 @@ class MainWindow(QMainWindow):
             self.current_frames.pop(cam_id, None)
             self.camera_fps.pop(cam_id, None)
             self._last_frame_time.pop(cam_id, None)
+            self._camera_start_time.pop(cam_id, None)
             self.live_visible_cameras.discard(cam_id)
             self._rebuild_camera_dropdown()
             self._sync_pip_cameras()
@@ -2091,9 +2094,18 @@ class MainWindow(QMainWindow):
                 self.current_frames.pop(cam_id, None)
                 self.camera_fps.pop(cam_id, None)
                 self._last_frame_time.pop(cam_id, None)
+                self._camera_start_time.pop(cam_id, None)
                 self._start_camera(preset)
                 restarted = True
             else:
+                # Grace period: don't zombie-check cameras still initializing.
+                # USB cameras on Windows can take 15+ seconds to open, set
+                # properties, and deliver the first frame.
+                started_at = self._camera_start_time.get(cam_id, 0.0)
+                age = now - started_at if started_at > 0 else 0
+                if age < 30.0:
+                    continue
+
                 # Check for zombie: thread alive but no frames for 15+ seconds
                 last_frame = self._last_frame_time.get(cam_id, 0.0)
                 stale_seconds = now - last_frame if last_frame > 0 else 0
@@ -2105,12 +2117,19 @@ class MainWindow(QMainWindow):
                     logger.warning("Camera %s zombie detected (0 FPS, last frame %.0fs ago), force-restarting...",
                                    preset.label or cam_id, stale_seconds)
                     capture.running = False
-                    capture.wait(3000)
+                    capture.wait(5000)
+                    # If the thread is STILL alive after waiting, don't start
+                    # a duplicate — that causes heap corruption on Windows
+                    if capture.isRunning():
+                        logger.error("Camera %s old thread still alive after wait, skipping restart to avoid crash",
+                                     preset.label or cam_id)
+                        continue
                     del self.camera_captures[cam_id]
                     self.frame_buffers.pop(cam_id, None)
                     self.current_frames.pop(cam_id, None)
                     self.camera_fps.pop(cam_id, None)
                     self._last_frame_time.pop(cam_id, None)
+                    self._camera_start_time.pop(cam_id, None)
                     self._start_camera(preset)
                     restarted = True
 
