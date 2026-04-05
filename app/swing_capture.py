@@ -876,34 +876,54 @@ class CameraSettingsDialog(QDialog):
         else:
             backends = [cv2.CAP_ANY]
 
-        # Phase 1: find all indices that respond
-        candidates = []  # [(index, cap, frame)]
+        # Scan indices 0-9, keeping accepted cameras held open so that
+        # duplicate indices for the same physical device are blocked from
+        # opening (Windows often maps one camera to multiple indices).
+        accepted_frames = []  # grayscale thumbnails for fallback comparison
+        held_caps = []  # keep accepted cameras open to block duplicates
+
         for i in range(10):
             if i in existing_usb_ids:
                 continue
+            frame = None
+            cap = None
             for backend in backends:
                 cap = cv2.VideoCapture(i, backend)
                 if cap.isOpened():
-                    ret, frame = cap.read()
-                    if ret:
-                        candidates.append((i, cap, frame))
+                    ret, f = cap.read()
+                    if ret and f is not None:
+                        frame = f
                         break
-                cap.release()
+                    cap.release()
+                    cap = None
+                else:
+                    cap.release()
+                    cap = None
 
-        # Phase 2: deduplicate by comparing frames — the same physical
-        # device opened at different indices produces near-identical images
-        accepted_frames = []  # downscaled frames of accepted cameras
-        for idx, cap, frame in candidates:
-            small = cv2.resize(frame, (64, 48)).astype(np.float32)
+            if frame is None:
+                # Can't open — likely blocked by a held camera (duplicate)
+                continue
+
+            # Compare grayscale thumbnails (eliminates backend color differences)
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            small = cv2.resize(gray, (64, 48)).astype(np.float32)
             is_dup = False
             for accepted in accepted_frames:
                 diff = np.mean(np.abs(small - accepted))
-                if diff < 20.0:
+                if diff < 15.0:
                     is_dup = True
                     break
+
             if not is_dup:
-                self._presets.append(CameraPreset(id=idx, type="usb", label=f"USB Camera {idx}"))
+                self._presets.append(CameraPreset(id=i, type="usb", label=f"USB Camera {i}"))
                 accepted_frames.append(small)
+                held_caps.append(cap)  # keep open to block duplicates
+            else:
+                if cap:
+                    cap.release()
+
+        # Release all held cameras
+        for cap in held_caps:
             cap.release()
 
         self._refresh_list()
