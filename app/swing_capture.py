@@ -68,6 +68,13 @@ from ui_components import (
 # Logging Setup
 # ============================================================================
 
+class _FlushingRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """RotatingFileHandler that flushes after every record so logs survive crashes."""
+    def emit(self, record):
+        super().emit(record)
+        self.flush()
+
+
 def setup_logging() -> QTextEditLogHandler:
     """Configure logging with file and UI handlers."""
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -76,8 +83,8 @@ def setup_logging() -> QTextEditLogHandler:
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
 
-    # File handler (rotating)
-    fh = logging.handlers.RotatingFileHandler(
+    # File handler (rotating, flushed after every record so crashes don't lose logs)
+    fh = _FlushingRotatingFileHandler(
         log_file, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
     )
     fh.setLevel(logging.DEBUG)
@@ -85,6 +92,37 @@ def setup_logging() -> QTextEditLogHandler:
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S"
     ))
     root.addHandler(fh)
+
+    # faulthandler: catches native segfaults (OpenCV crashes) and writes
+    # a traceback to a dedicated file. Essential for diagnosing .exe crashes.
+    try:
+        import faulthandler
+        crash_log = LOG_DIR / "crash.log"
+        # Keep file open for the lifetime of the process
+        _fh_crash = open(crash_log, "a", buffering=1, encoding="utf-8")
+        _fh_crash.write(f"\n=== Process started {datetime.now().isoformat()} ===\n")
+        _fh_crash.flush()
+        faulthandler.enable(file=_fh_crash, all_threads=True)
+        # Keep reference on root logger so GC doesn't close the file
+        root._faulthandler_file = _fh_crash  # type: ignore[attr-defined]
+    except Exception as e:
+        logging.getLogger(__name__).warning("Could not enable faulthandler: %s", e)
+
+    # Unhandled exception hook — catches any Python exception that escapes
+    # the event loop (Qt normally swallows these silently, causing crashes).
+    def _excepthook(exc_type, exc_value, exc_tb):
+        logging.getLogger(__name__).critical(
+            "UNHANDLED EXCEPTION",
+            exc_info=(exc_type, exc_value, exc_tb),
+        )
+        for h in root.handlers:
+            try:
+                h.flush()
+            except Exception:
+                pass
+        # Call default hook so Qt/Python still prints to stderr
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+    sys.excepthook = _excepthook
 
     # Console handler
     ch = logging.StreamHandler()
