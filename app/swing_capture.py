@@ -742,8 +742,8 @@ class CameraSettingsDialog(QDialog):
 
         # Camera actions
         btn_row = QHBoxLayout()
-        scan_usb_btn = QPushButton("Detect USB Cameras")
-        scan_usb_btn.setToolTip("Scan for USB webcams and virtual cameras (DroidCam, EpocCam, Camo)")
+        scan_usb_btn = QPushButton("Add USB Camera")
+        scan_usb_btn.setToolTip("Scan for USB webcams and pick which one to add (max 2 cameras)")
         scan_usb_btn.clicked.connect(self._detect_usb)
         btn_row.addWidget(scan_usb_btn)
 
@@ -810,11 +810,17 @@ class CameraSettingsDialog(QDialog):
         self._refresh_list()
 
     def _open_network_camera_setup(self):
+        if len(self._presets) >= 2:
+            QMessageBox.information(self, "Limit Reached",
+                                   "Maximum 2 cameras allowed. Remove one first.")
+            return
         dlg = NetworkCameraDialog(self)
         dlg.camera_added.connect(self._on_network_camera_added)
         dlg.exec()
 
     def _on_network_camera_added(self, url: str, desc: str):
+        if len(self._presets) >= 2:
+            return
         existing_urls = {p.id for p in self._presets if p.type == "network"}
         if url not in existing_urls:
             self._presets.append(CameraPreset(id=url, type="network", label=desc))
@@ -870,6 +876,11 @@ class CameraSettingsDialog(QDialog):
         self._save_row_settings(self.camera_list.currentRow())
 
     def _detect_usb(self):
+        if len(self._presets) >= 2:
+            QMessageBox.information(self, "Limit Reached",
+                                   "Maximum 2 cameras allowed. Remove one first.")
+            return
+
         existing_usb_ids = {p.id for p in self._presets if p.type == "usb"}
         if sys.platform == "win32":
             backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
@@ -877,10 +888,10 @@ class CameraSettingsDialog(QDialog):
             backends = [cv2.CAP_ANY]
 
         # Scan indices 0-9, keeping accepted cameras held open so that
-        # duplicate indices for the same physical device are blocked from
-        # opening (Windows often maps one camera to multiple indices).
-        accepted_frames = []  # grayscale thumbnails for fallback comparison
-        held_caps = []  # keep accepted cameras open to block duplicates
+        # duplicate indices for the same physical device are blocked.
+        found = []  # [(index, resolution_str)]
+        accepted_frames = []
+        held_caps = []
 
         for i in range(10):
             if i in existing_usb_ids:
@@ -901,23 +912,22 @@ class CameraSettingsDialog(QDialog):
                     cap = None
 
             if frame is None:
-                # Can't open — likely blocked by a held camera (duplicate)
                 continue
 
-            # Compare grayscale thumbnails (eliminates backend color differences)
+            # Dedup by grayscale comparison
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             small = cv2.resize(gray, (64, 48)).astype(np.float32)
             is_dup = False
             for accepted in accepted_frames:
-                diff = np.mean(np.abs(small - accepted))
-                if diff < 15.0:
+                if np.mean(np.abs(small - accepted)) < 15.0:
                     is_dup = True
                     break
 
             if not is_dup:
-                self._presets.append(CameraPreset(id=i, type="usb", label=f"USB Camera {i}"))
+                h, w = frame.shape[:2]
+                found.append((i, f"{w}x{h}"))
                 accepted_frames.append(small)
-                held_caps.append(cap)  # keep open to block duplicates
+                held_caps.append(cap)
             else:
                 if cap:
                     cap.release()
@@ -925,6 +935,48 @@ class CameraSettingsDialog(QDialog):
         # Release all held cameras
         for cap in held_caps:
             cap.release()
+
+        if not found:
+            QMessageBox.information(self, "No Cameras Found",
+                                   "No new USB cameras detected.")
+            return
+
+        # Show picker dialog
+        slots_left = 2 - len(self._presets)
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Select Camera")
+        dlg.setMinimumWidth(350)
+        dlg.setStyleSheet(self.styleSheet())
+        dlg_layout = QVBoxLayout(dlg)
+
+        dlg_layout.addWidget(QLabel(
+            f"Found {len(found)} camera(s). Select one to add:"
+            if slots_left == 1 else
+            f"Found {len(found)} camera(s). Select up to {slots_left} to add:"
+        ))
+
+        cam_list = QListWidget()
+        for idx, res in found:
+            cam_list.addItem(f"USB Camera {idx}  ({res})")
+        if slots_left > 1:
+            cam_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
+        cam_list.setCurrentRow(0)
+        dlg_layout.addWidget(cam_list)
+
+        btn_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btn_box.accepted.connect(dlg.accept)
+        btn_box.rejected.connect(dlg.reject)
+        dlg_layout.addWidget(btn_box)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        selected = cam_list.selectedIndexes()
+        for sel in selected[:slots_left]:
+            idx, res = found[sel.row()]
+            self._presets.append(CameraPreset(id=idx, type="usb", label=f"USB Camera {idx}"))
 
         self._refresh_list()
 
