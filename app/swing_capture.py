@@ -995,6 +995,7 @@ class MainWindow(QMainWindow):
         self.camera_captures: Dict = {}
         self.frame_buffers: Dict = {}
         self.camera_fps: Dict = {}  # cam_id -> latest measured FPS
+        self._last_frame_time: Dict = {}  # cam_id -> time.time() of last frame
         self.audio_detector: Optional[AudioDetector] = None
         self.current_frames: Dict = {}
 
@@ -1756,9 +1757,10 @@ class MainWindow(QMainWindow):
     def _dedup_usb_cameras(self):
         """Remove duplicate USB camera presets that map to the same physical device.
 
-        Opens each saved USB camera, reads a frame, and compares against
-        already-accepted cameras.  Duplicates are removed from the config
-        and settings are re-saved.
+        Keeps accepted cameras open while testing subsequent ones — if a
+        subsequent camera can't be opened (device busy), it's the same
+        physical device.  Falls back to grayscale frame comparison for
+        cameras that can be opened simultaneously.
         """
         usb_presets = [p for p in self.config.cameras if p.type == "usb"]
         if len(usb_presets) <= 1:
@@ -1770,38 +1772,63 @@ class MainWindow(QMainWindow):
             backends = [cv2.CAP_ANY]
 
         accepted_ids = set()
-        accepted_frames = []
+        held_caps = []  # Keep accepted cameras open to block duplicates
+        accepted_frames = []  # Grayscale thumbnails for fallback comparison
+
         for preset in usb_presets:
             frame = None
+            cap = None
             for backend in backends:
                 cap = cv2.VideoCapture(preset.id, backend)
                 if cap.isOpened():
                     ret, f = cap.read()
-                    cap.release()
-                    if ret:
+                    if ret and f is not None:
                         frame = f
                         break
-                cap.release()
+                    cap.release()
+                    cap = None
+                else:
+                    cap.release()
+                    cap = None
 
             if frame is None:
-                # Can't open — keep it so the retry timer can try later
-                accepted_ids.add(preset.id)
+                # Can't open — if we already hold cameras open, this is
+                # likely the same physical device being blocked
+                if held_caps:
+                    logger.info("Camera %s could not open while other cameras held (likely duplicate)",
+                                preset.label or preset.id)
+                else:
+                    # No cameras held yet, keep for retry timer
+                    accepted_ids.add(preset.id)
                 continue
 
-            small = cv2.resize(frame, (64, 48)).astype(np.float32)
+            # Compare grayscale thumbnails (eliminates DSHOW vs MSMF color differences)
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            small = cv2.resize(gray, (64, 48)).astype(np.float32)
             is_dup = False
             for accepted in accepted_frames:
                 diff = np.mean(np.abs(small - accepted))
-                if diff < 20.0:
+                if diff < 15.0:
                     is_dup = True
                     break
 
             if not is_dup:
                 accepted_ids.add(preset.id)
                 accepted_frames.append(small)
+                held_caps.append(cap)  # Keep open to block duplicates
             else:
                 logger.info("Removing duplicate USB camera %s (same device as existing)",
                             preset.label or preset.id)
+                if cap:
+                    cap.release()
+
+        # Release all held cameras
+        for cap in held_caps:
+            cap.release()
+
+        # Brief pause to let drivers fully release before threads reopen
+        if held_caps:
+            time.sleep(0.5)
 
         if len(accepted_ids) < len(usb_presets):
             self.config.cameras = [
@@ -1842,6 +1869,7 @@ class MainWindow(QMainWindow):
             # Clean up stale frame references
             self.current_frames.pop(cam_id, None)
             self.camera_fps.pop(cam_id, None)
+            self._last_frame_time.pop(cam_id, None)
             self.live_visible_cameras.discard(cam_id)
             self._rebuild_camera_dropdown()
             self._sync_pip_cameras()
@@ -1852,10 +1880,11 @@ class MainWindow(QMainWindow):
         Runs on a 10-second timer so cameras plugged in or started after the
         app launches (e.g. DroidCam) are picked up automatically.
 
-        Also detects zombie threads: still running but 0 FPS and no current
-        frame (e.g. USB camera where cap.read() keeps failing silently).
+        Also detects zombie threads: still running but no frames received
+        for 15+ seconds (covers cameras that worked initially then died).
         """
         restarted = False
+        now = time.time()
         for preset in self.config.cameras:
             cam_id = preset.id
             capture = self.camera_captures.get(cam_id)
@@ -1869,19 +1898,29 @@ class MainWindow(QMainWindow):
                 self.frame_buffers.pop(cam_id, None)
                 self.current_frames.pop(cam_id, None)
                 self.camera_fps.pop(cam_id, None)
+                self._last_frame_time.pop(cam_id, None)
                 self._start_camera(preset)
                 restarted = True
-            elif (self.camera_fps.get(cam_id, 0.0) == 0.0
-                  and cam_id not in self.current_frames):
-                # Zombie: thread alive but producing nothing — force restart
-                logger.warning("Camera %s zombie detected (0 FPS, no frames), force-restarting...", preset.label or cam_id)
-                capture.running = False
-                capture.wait(3000)
-                del self.camera_captures[cam_id]
-                self.frame_buffers.pop(cam_id, None)
-                self.camera_fps.pop(cam_id, None)
-                self._start_camera(preset)
-                restarted = True
+            else:
+                # Check for zombie: thread alive but no frames for 15+ seconds
+                last_frame = self._last_frame_time.get(cam_id, 0.0)
+                stale_seconds = now - last_frame if last_frame > 0 else 0
+                is_zombie = (
+                    self.camera_fps.get(cam_id, 0.0) == 0.0
+                    and (last_frame == 0.0 or stale_seconds > 15.0)
+                )
+                if is_zombie:
+                    logger.warning("Camera %s zombie detected (0 FPS, last frame %.0fs ago), force-restarting...",
+                                   preset.label or cam_id, stale_seconds)
+                    capture.running = False
+                    capture.wait(3000)
+                    del self.camera_captures[cam_id]
+                    self.frame_buffers.pop(cam_id, None)
+                    self.current_frames.pop(cam_id, None)
+                    self.camera_fps.pop(cam_id, None)
+                    self._last_frame_time.pop(cam_id, None)
+                    self._start_camera(preset)
+                    restarted = True
 
         if restarted:
             self._update_camera_status()
@@ -2061,6 +2100,7 @@ class MainWindow(QMainWindow):
     def _on_frame_ready(self, camera_id, frame: np.ndarray, timestamp: float):
         is_new = camera_id not in self.current_frames
         self.current_frames[camera_id] = frame.copy()
+        self._last_frame_time[camera_id] = time.time()
 
         if is_new:
             # Camera just connected — add to visible set and refresh dropdown
