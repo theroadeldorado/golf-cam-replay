@@ -1,6 +1,6 @@
 """Version info for ReplaySwing."""
 
-__version__ = "0.3.9.1-beta"
+__version__ = "0.3.9.4-beta"
 
 
 def parse_version(v: str):
