@@ -20,7 +20,9 @@ import sys
 import os
 import logging
 import logging.handlers
+import threading
 import time
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict
@@ -73,6 +75,102 @@ class _FlushingRotatingFileHandler(logging.handlers.RotatingFileHandler):
     def emit(self, record):
         super().emit(record)
         self.flush()
+
+
+# ============================================================================
+# Remote Log Server
+# ============================================================================
+
+class _RemoteLogHandler(logging.Handler):
+    """Logging handler that keeps recent lines in a deque for the HTTP server."""
+    def __init__(self, maxlen=2000):
+        super().__init__()
+        self.lines = deque(maxlen=maxlen)
+
+    def emit(self, record):
+        self.lines.append(self.format(record))
+
+
+class _RemoteLogServer(threading.Thread):
+    """Tiny HTTP server that serves recent log lines with auto-refresh.
+
+    Browse to http://<pc-ip>:9876 from any device on the network.
+    """
+    PORT = 9876
+
+    def __init__(self, log_handler: _RemoteLogHandler):
+        super().__init__(daemon=True)
+        self._handler = log_handler
+        self._server = None
+
+    def run(self):
+        handler = self._handler
+
+        class LogRequestHandler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path == "/api/logs":
+                    # JSON endpoint for raw lines
+                    import json
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps(list(handler.lines)).encode())
+                    return
+
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                lines_html = "\n".join(
+                    line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    for line in handler.lines
+                )
+                html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>ReplaySwing v{__version__} — Remote Log</title>
+<style>
+  body {{ background: #111; color: #aaa; font: 12px Consolas, monospace; margin: 0; padding: 8px; }}
+  h2 {{ color: #4a9eff; margin: 0 0 8px; font-size: 14px; }}
+  #log {{ white-space: pre-wrap; word-break: break-all; }}
+  .err {{ color: #ff6b6b; }} .warn {{ color: #ffa94d; }} .info {{ color: #aaa; }}
+</style></head><body>
+<h2>ReplaySwing v{__version__} — Remote Log (auto-refreshes every 2s)</h2>
+<div id="log">{lines_html}</div>
+<script>
+setInterval(async () => {{
+  try {{
+    const r = await fetch('/api/logs');
+    const lines = await r.json();
+    const el = document.getElementById('log');
+    el.innerHTML = lines.map(l => {{
+      if (l.includes('[ERROR]') || l.includes('[CRITICAL]')) return '<span class="err">' + l.replace(/</g,'&lt;') + '</span>';
+      if (l.includes('[WARNING]')) return '<span class="warn">' + l.replace(/</g,'&lt;') + '</span>';
+      return l.replace(/</g,'&lt;');
+    }}).join('\\n');
+    window.scrollTo(0, document.body.scrollHeight);
+  }} catch(e) {{}}
+}}, 2000);
+window.scrollTo(0, document.body.scrollHeight);
+</script></body></html>"""
+                self.wfile.write(html.encode())
+
+            def log_message(self, format, *args):
+                pass  # Suppress HTTP access logs
+
+        try:
+            self._server = http.server.HTTPServer(("0.0.0.0", self.PORT), LogRequestHandler)
+            hostname = socket.gethostname()
+            local_ip = socket.gethostbyname(hostname)
+            logging.getLogger(__name__).info(
+                "Remote log server at http://%s:%d", local_ip, self.PORT
+            )
+            self._server.serve_forever()
+        except Exception as e:
+            logging.getLogger(__name__).warning("Remote log server failed to start: %s", e)
+
+    def stop(self):
+        if self._server:
+            self._server.shutdown()
 
 
 def setup_logging() -> QTextEditLogHandler:
@@ -135,6 +233,18 @@ def setup_logging() -> QTextEditLogHandler:
     ui_handler.setLevel(logging.INFO)
     ui_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S"))
     root.addHandler(ui_handler)
+
+    # Remote log server — browse to http://<pc-ip>:9876 from another device
+    remote_handler = _RemoteLogHandler()
+    remote_handler.setLevel(logging.DEBUG)
+    remote_handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S"
+    ))
+    root.addHandler(remote_handler)
+    log_server = _RemoteLogServer(remote_handler)
+    log_server.start()
+    # Keep reference so GC doesn't collect it
+    root._remote_log_server = log_server  # type: ignore[attr-defined]
 
     return ui_handler
 
