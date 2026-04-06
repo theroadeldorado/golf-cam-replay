@@ -1170,6 +1170,14 @@ class CameraSettingsDialog(QDialog):
             if frame is None:
                 continue
 
+            # Skip virtual cameras that produce black/blank frames
+            brightness = float(np.mean(frame))
+            if brightness < 5.0:
+                logger.info("USB scan: skipping index %d (brightness=%.1f, likely virtual camera)", i, brightness)
+                if cap:
+                    cap.release()
+                continue
+
             # Dedup by grayscale comparison
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             small = cv2.resize(gray, (64, 48)).astype(np.float32)
