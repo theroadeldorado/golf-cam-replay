@@ -164,15 +164,26 @@ window.scrollTo(0, document.body.scrollHeight);
                 self.wfile.write(html.encode())
 
             def _handle_scan(self):
-                """Probe all camera indices with all backends and show results with sample frames."""
+                """Probe camera indices with DSHOW and show results with sample frames.
+
+                Uses chunked streaming so results appear as they're found.
+                Only uses DSHOW on Windows (MSMF hangs for 10+ seconds per index).
+                """
                 import base64
                 import sys as _sys
 
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Transfer-Encoding", "chunked")
                 self.end_headers()
 
-                html_parts = [f"""<!DOCTYPE html>
+                def send_chunk(text):
+                    data = text.encode()
+                    self.wfile.write(f"{len(data):x}\r\n".encode())
+                    self.wfile.write(data + b"\r\n")
+                    self.wfile.flush()
+
+                send_chunk(f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <title>Camera Diagnostic Scan</title>
 <style>
@@ -185,11 +196,11 @@ window.scrollTo(0, document.body.scrollHeight);
 </style></head><body>
 <h2>Camera Diagnostic Scan</h2>
 <p><a href="/">Back to logs</a></p>
-"""]
+""")
 
                 # Windows device enumeration via PowerShell
                 if _sys.platform == "win32":
-                    html_parts.append("<h3>Windows Camera Devices (PnP)</h3>")
+                    send_chunk("<h3>Windows Camera Devices (PnP)</h3>")
                     try:
                         import subprocess
                         result = subprocess.run(
@@ -198,79 +209,79 @@ window.scrollTo(0, document.body.scrollHeight);
                             capture_output=True, text=True, timeout=10
                         )
                         pnp_output = result.stdout.strip() or "(no devices found)"
-                        html_parts.append(f'<div class="card"><pre>{pnp_output}</pre></div>')
+                        send_chunk(f'<div class="card"><pre>{pnp_output}</pre></div>')
 
-                        # Also check for imaging devices
                         result2 = subprocess.run(
                             ["powershell", "-Command",
                              "Get-PnpDevice -Class Image -Status OK | Select-Object FriendlyName, InstanceId | Format-List"],
                             capture_output=True, text=True, timeout=10
                         )
                         if result2.stdout.strip():
-                            html_parts.append(f'<div class="card"><b>Imaging Devices:</b><pre>{result2.stdout.strip()}</pre></div>')
+                            send_chunk(f'<div class="card"><b>Imaging Devices:</b><pre>{result2.stdout.strip()}</pre></div>')
                     except Exception as e:
-                        html_parts.append(f'<div class="card bad">PnP enumeration failed: {e}</div>')
+                        send_chunk(f'<div class="card bad">PnP enumeration failed: {e}</div>')
 
-                # OpenCV camera probe
-                html_parts.append("<h3>OpenCV Camera Probe (indices 0-9)</h3>")
+                # OpenCV camera probe — DSHOW only on Windows (MSMF hangs)
+                send_chunk("<h3>OpenCV Camera Probe (indices 0-4, DSHOW)</h3>")
 
-                if _sys.platform == "win32":
-                    backends = [("DSHOW", cv2.CAP_DSHOW), ("MSMF", cv2.CAP_MSMF), ("ANY", cv2.CAP_ANY)]
-                else:
-                    backends = [("ANY", cv2.CAP_ANY)]
+                backend = cv2.CAP_DSHOW if _sys.platform == "win32" else cv2.CAP_ANY
+                bname = "DSHOW" if _sys.platform == "win32" else "ANY"
 
-                for idx in range(10):
-                    for bname, backend in backends:
-                        try:
-                            cap = cv2.VideoCapture(idx, backend)
-                            if not cap.isOpened():
-                                continue
+                found_any = False
+                for idx in range(5):
+                    send_chunk(f'<div class="card">Probing index {idx}...')
+                    try:
+                        cap = cv2.VideoCapture(idx, backend)
+                        if not cap.isOpened():
+                            send_chunk(f' <span class="warn">not available</span></div>')
+                            continue
 
-                            ret, frame = cap.read()
-                            if not ret or frame is None:
-                                cap.release()
-                                html_parts.append(
-                                    f'<div class="card">Index {idx} [{bname}]: '
-                                    f'<span class="warn">opened but read() failed</span></div>')
-                                continue
-
-                            h, w = frame.shape[:2]
-                            brightness = float(np.mean(frame))
-                            std_dev = float(np.std(frame))
-
-                            # Read a second frame to check if static
-                            ret2, frame2 = cap.read()
-                            is_static = False
-                            if ret2 and frame2 is not None:
-                                diff = float(np.mean(np.abs(frame.astype(float) - frame2.astype(float))))
-                                is_static = diff < 1.0
+                        ret, frame = cap.read()
+                        if not ret or frame is None:
                             cap.release()
+                            send_chunk(f' <span class="warn">opened but read() failed</span></div>')
+                            continue
 
-                            # Encode frame as JPEG for inline display
-                            _, jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-                            b64 = base64.b64encode(jpg.tobytes()).decode()
+                        h, w = frame.shape[:2]
+                        brightness = float(np.mean(frame))
+                        std_dev = float(np.std(frame))
 
-                            # Classify
-                            if brightness < 5.0:
-                                verdict = '<span class="bad">BLACK (virtual camera?)</span>'
-                            elif is_static and std_dev < 10.0:
-                                verdict = '<span class="warn">STATIC/UNIFORM (virtual camera?)</span>'
-                            elif is_static:
-                                verdict = '<span class="warn">STATIC FRAME (may be virtual)</span>'
-                            else:
-                                verdict = '<span class="good">LOOKS REAL</span>'
+                        # Read second frame to check if static
+                        ret2, frame2 = cap.read()
+                        is_static = False
+                        if ret2 and frame2 is not None:
+                            diff = float(np.mean(np.abs(frame.astype(float) - frame2.astype(float))))
+                            is_static = diff < 1.0
+                        cap.release()
 
-                            html_parts.append(f'''<div class="card">
-<b>Index {idx} [{bname}]</b> — {w}x{h} — {verdict}<br>
+                        # Encode frame as inline JPEG
+                        _, jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                        b64 = base64.b64encode(jpg.tobytes()).decode()
+
+                        if brightness < 5.0:
+                            verdict = '<span class="bad">BLACK (virtual camera?)</span>'
+                        elif is_static and std_dev < 10.0:
+                            verdict = '<span class="warn">STATIC/UNIFORM (virtual camera?)</span>'
+                        elif is_static:
+                            verdict = '<span class="warn">STATIC FRAME (may be virtual)</span>'
+                        else:
+                            verdict = '<span class="good">LOOKS REAL</span>'
+
+                        found_any = True
+                        send_chunk(f"""<br><b>Index {idx} [{bname}]</b> — {w}x{h} — {verdict}<br>
 Brightness: {brightness:.1f} | StdDev: {std_dev:.1f} | Static: {is_static}<br>
 <img src="data:image/jpeg;base64,{b64}" width="{min(w, 320)}">
-</div>''')
-                        except Exception as e:
-                            html_parts.append(
-                                f'<div class="card bad">Index {idx} [{bname}]: exception: {e}</div>')
+</div>""")
+                    except Exception as e:
+                        send_chunk(f' <span class="bad">exception: {e}</span></div>')
 
-                html_parts.append("</body></html>")
-                self.wfile.write("".join(html_parts).encode())
+                if not found_any:
+                    send_chunk('<div class="card bad">No cameras found at any index!</div>')
+
+                send_chunk("</body></html>")
+                # Final chunk
+                self.wfile.write(b"0\r\n\r\n")
+                self.wfile.flush()
 
             def log_message(self, format, *args):
                 pass  # Suppress HTTP access logs
