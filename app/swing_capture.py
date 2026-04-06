@@ -2042,8 +2042,13 @@ class MainWindow(QMainWindow):
     def _start_cameras(self):
         """Start cameras from config (or default)."""
         if not self.config.cameras:
-            self.config.cameras = [CameraPreset(id=0, type="usb", label="Default")]
-            self.config.primary_camera = 0
+            # First launch — probe for a real (non-black) USB camera
+            # instead of blindly defaulting to index 0 which may be
+            # a virtual camera (e.g. GSPro, OBS Virtual Camera).
+            best_idx = CameraCapture.find_real_usb_camera()
+            self.config.cameras = [CameraPreset(id=best_idx, type="usb", label="Default")]
+            self.config.primary_camera = best_idx
+            save_settings(self.config)
 
         # Deduplicate saved USB cameras that are the same physical device
         self._dedup_usb_cameras()
@@ -2428,6 +2433,28 @@ class MainWindow(QMainWindow):
             self.live_visible_cameras.add(camera_id)
             self._rebuild_camera_dropdown()
             self._sync_pip_cameras()
+
+            # One-time check: if the primary USB camera is sending black
+            # frames, it's likely a virtual camera. Re-probe and switch.
+            if (camera_id == self.config.primary_camera
+                    and isinstance(camera_id, int)
+                    and float(np.mean(frame)) < 5.0):
+                logger.warning("Primary camera %s appears to be a virtual camera (black frames), re-probing...",
+                               camera_id)
+                better = CameraCapture.find_real_usb_camera()
+                if better != camera_id:
+                    logger.info("Switching primary camera from %s to %s", camera_id, better)
+                    self._stop_camera(camera_id)
+                    # Replace the preset
+                    self.config.cameras = [p for p in self.config.cameras if p.id != camera_id]
+                    new_preset = CameraPreset(id=better, type="usb", label="Default")
+                    self.config.cameras.insert(0, new_preset)
+                    self.config.primary_camera = better
+                    save_settings(self.config)
+                    self._start_camera(new_preset)
+                    self.live_visible_cameras = {better}
+                    self._rebuild_camera_dropdown()
+                    return
 
         if self.is_armed and camera_id in self.frame_buffers:
             self.frame_buffers[camera_id].add_frame(frame, timestamp)

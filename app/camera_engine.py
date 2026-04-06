@@ -383,6 +383,41 @@ class CameraCapture(QThread):
         logger.error("Camera %s: no working backend found", camera_id)
         return None
 
+    @staticmethod
+    def find_real_usb_camera(max_index=5):
+        """Probe camera indices 0..max_index and return the first that
+        produces a non-black frame.  Returns the index, or 0 as fallback.
+
+        Used at first launch to skip virtual cameras (e.g. GSPro, OBS)
+        that sit at low indices and output black frames.
+        """
+        import sys
+        backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
+
+        for idx in range(max_index):
+            cap = cv2.VideoCapture(idx, backend)
+            try:
+                if not cap.isOpened():
+                    continue
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    continue
+                brightness = float(np.mean(frame))
+                logger.info("Camera probe %d: %dx%d, brightness=%.1f",
+                            idx, frame.shape[1], frame.shape[0], brightness)
+                if brightness >= 5.0:
+                    logger.info("Camera probe: index %d has a real image", idx)
+                    return idx
+                else:
+                    logger.info("Camera probe: index %d is black (virtual camera?)", idx)
+            except Exception as e:
+                logger.debug("Camera probe %d failed: %s", idx, e)
+            finally:
+                cap.release()
+
+        logger.warning("Camera probe: no non-black camera found, defaulting to 0")
+        return 0
+
     def _open_network_camera(self, url):
         """Try to open a network camera (MJPEG, RTSP, or any URL OpenCV supports).
 
