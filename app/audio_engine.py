@@ -436,8 +436,11 @@ class AudioDetector(QThread):
                 except Exception as e:
                     logger.error("Audio read error: %s", e)
         finally:
-            stream.stop_stream()
-            stream.close()
+            try:
+                stream.stop_stream()
+                stream.close()
+            except Exception:
+                pass
             p.terminate()
 
     def _save_trigger_snippet(self, features: Dict, confidence: float):
@@ -502,22 +505,34 @@ class MicPreview(QThread):
 
         self.running = True
         p = pyaudio.PyAudio()
+        kwargs = {
+            "format": pyaudio.paInt16,
+            "channels": 1,
+            "rate": self.sample_rate,
+            "input": True,
+            "frames_per_buffer": self.chunk_size,
+        }
+        if self.device_index is not None:
+            kwargs["input_device_index"] = self.device_index
         try:
-            kwargs = {
-                "format": pyaudio.paInt16,
-                "channels": 1,
-                "rate": self.sample_rate,
-                "input": True,
-                "frames_per_buffer": self.chunk_size,
-            }
-            if self.device_index is not None:
-                kwargs["input_device_index"] = self.device_index
             stream = p.open(**kwargs)
-        except Exception as e:
-            logger.error("MicPreview audio error: %s", e)
-            p.terminate()
-            self.finished_preview.emit()
-            return
+        except Exception:
+            # Retry with device's native sample rate
+            try:
+                dev_idx = self.device_index if self.device_index is not None else p.get_default_input_device_info()["index"]
+                native_rate = int(p.get_device_info_by_index(dev_idx)["defaultSampleRate"])
+                if native_rate != self.sample_rate:
+                    logger.info("MicPreview: retrying with native sample rate %d", native_rate)
+                    kwargs["rate"] = native_rate
+                    kwargs["frames_per_buffer"] = int(native_rate * self.chunk_size / self.sample_rate)
+                    stream = p.open(**kwargs)
+                else:
+                    raise
+            except Exception as e:
+                logger.error("MicPreview audio error: %s", e)
+                p.terminate()
+                self.finished_preview.emit()
+                return
 
         deadline = (time.time() + self.duration) if self.duration > 0 else 0
         try:
@@ -535,8 +550,11 @@ class MicPreview(QThread):
                 except Exception:
                     break
         finally:
-            stream.stop_stream()
-            stream.close()
+            try:
+                stream.stop_stream()
+                stream.close()
+            except Exception:
+                pass
             p.terminate()
             self.finished_preview.emit()
 

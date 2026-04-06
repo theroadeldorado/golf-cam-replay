@@ -248,7 +248,11 @@ class CameraCapture(QThread):
         # Log first frame attempt
         ret, frame = self.cap.read()
         if ret:
-            logger.info("Camera %s: first frame OK (%dx%d)", self.camera_id, frame.shape[1], frame.shape[0])
+            brightness = float(np.mean(frame))
+            logger.info("Camera %s: first frame OK (%dx%d, brightness=%.1f)",
+                        self.camera_id, frame.shape[1], frame.shape[0], brightness)
+            if brightness < 5.0:
+                logger.warning("Camera %s: frame is nearly black — may be a virtual camera", self.camera_id)
             frame = self._apply_transforms(frame)
             self.frame_ready.emit(self.camera_id, frame, time.time())
         else:
