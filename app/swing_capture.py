@@ -95,6 +95,10 @@ class _RemoteLogServer(threading.Thread):
     """Tiny HTTP server that serves recent log lines with auto-refresh.
 
     Browse to http://<pc-ip>:9876 from any device on the network.
+    Endpoints:
+      /         — live log viewer with auto-refresh
+      /api/logs — JSON array of recent log lines
+      /scan     — probe all camera indices and show sample frames
     """
     PORT = 9876
 
@@ -109,13 +113,16 @@ class _RemoteLogServer(threading.Thread):
         class LogRequestHandler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
                 if self.path == "/api/logs":
-                    # JSON endpoint for raw lines
                     import json
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     self.wfile.write(json.dumps(list(handler.lines)).encode())
+                    return
+
+                if self.path == "/scan":
+                    self._handle_scan()
                     return
 
                 self.send_response(200)
@@ -133,8 +140,10 @@ class _RemoteLogServer(threading.Thread):
   h2 {{ color: #4a9eff; margin: 0 0 8px; font-size: 14px; }}
   #log {{ white-space: pre-wrap; word-break: break-all; }}
   .err {{ color: #ff6b6b; }} .warn {{ color: #ffa94d; }} .info {{ color: #aaa; }}
+  a {{ color: #4a9eff; }}
 </style></head><body>
 <h2>ReplaySwing v{__version__} — Remote Log (auto-refreshes every 2s)</h2>
+<p><a href="/scan">Run Camera Diagnostic Scan</a></p>
 <div id="log">{lines_html}</div>
 <script>
 setInterval(async () => {{
@@ -153,6 +162,115 @@ setInterval(async () => {{
 window.scrollTo(0, document.body.scrollHeight);
 </script></body></html>"""
                 self.wfile.write(html.encode())
+
+            def _handle_scan(self):
+                """Probe all camera indices with all backends and show results with sample frames."""
+                import base64
+                import sys as _sys
+
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+
+                html_parts = [f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>Camera Diagnostic Scan</title>
+<style>
+  body {{ background: #111; color: #ddd; font: 13px Consolas, monospace; margin: 0; padding: 16px; }}
+  h2 {{ color: #4a9eff; }} h3 {{ color: #ffa94d; margin-top: 24px; }}
+  .card {{ background: #222; border: 1px solid #444; border-radius: 8px; padding: 12px; margin: 8px 0; }}
+  img {{ border: 1px solid #555; margin-top: 8px; }}
+  .good {{ color: #34d17e; }} .bad {{ color: #ff6b6b; }} .warn {{ color: #ffa94d; }}
+  a {{ color: #4a9eff; }}
+</style></head><body>
+<h2>Camera Diagnostic Scan</h2>
+<p><a href="/">Back to logs</a></p>
+"""]
+
+                # Windows device enumeration via PowerShell
+                if _sys.platform == "win32":
+                    html_parts.append("<h3>Windows Camera Devices (PnP)</h3>")
+                    try:
+                        import subprocess
+                        result = subprocess.run(
+                            ["powershell", "-Command",
+                             "Get-PnpDevice -Class Camera -Status OK | Select-Object FriendlyName, InstanceId | Format-List"],
+                            capture_output=True, text=True, timeout=10
+                        )
+                        pnp_output = result.stdout.strip() or "(no devices found)"
+                        html_parts.append(f'<div class="card"><pre>{pnp_output}</pre></div>')
+
+                        # Also check for imaging devices
+                        result2 = subprocess.run(
+                            ["powershell", "-Command",
+                             "Get-PnpDevice -Class Image -Status OK | Select-Object FriendlyName, InstanceId | Format-List"],
+                            capture_output=True, text=True, timeout=10
+                        )
+                        if result2.stdout.strip():
+                            html_parts.append(f'<div class="card"><b>Imaging Devices:</b><pre>{result2.stdout.strip()}</pre></div>')
+                    except Exception as e:
+                        html_parts.append(f'<div class="card bad">PnP enumeration failed: {e}</div>')
+
+                # OpenCV camera probe
+                html_parts.append("<h3>OpenCV Camera Probe (indices 0-9)</h3>")
+
+                if _sys.platform == "win32":
+                    backends = [("DSHOW", cv2.CAP_DSHOW), ("MSMF", cv2.CAP_MSMF), ("ANY", cv2.CAP_ANY)]
+                else:
+                    backends = [("ANY", cv2.CAP_ANY)]
+
+                for idx in range(10):
+                    for bname, backend in backends:
+                        try:
+                            cap = cv2.VideoCapture(idx, backend)
+                            if not cap.isOpened():
+                                continue
+
+                            ret, frame = cap.read()
+                            if not ret or frame is None:
+                                cap.release()
+                                html_parts.append(
+                                    f'<div class="card">Index {idx} [{bname}]: '
+                                    f'<span class="warn">opened but read() failed</span></div>')
+                                continue
+
+                            h, w = frame.shape[:2]
+                            brightness = float(np.mean(frame))
+                            std_dev = float(np.std(frame))
+
+                            # Read a second frame to check if static
+                            ret2, frame2 = cap.read()
+                            is_static = False
+                            if ret2 and frame2 is not None:
+                                diff = float(np.mean(np.abs(frame.astype(float) - frame2.astype(float))))
+                                is_static = diff < 1.0
+                            cap.release()
+
+                            # Encode frame as JPEG for inline display
+                            _, jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                            b64 = base64.b64encode(jpg.tobytes()).decode()
+
+                            # Classify
+                            if brightness < 5.0:
+                                verdict = '<span class="bad">BLACK (virtual camera?)</span>'
+                            elif is_static and std_dev < 10.0:
+                                verdict = '<span class="warn">STATIC/UNIFORM (virtual camera?)</span>'
+                            elif is_static:
+                                verdict = '<span class="warn">STATIC FRAME (may be virtual)</span>'
+                            else:
+                                verdict = '<span class="good">LOOKS REAL</span>'
+
+                            html_parts.append(f'''<div class="card">
+<b>Index {idx} [{bname}]</b> — {w}x{h} — {verdict}<br>
+Brightness: {brightness:.1f} | StdDev: {std_dev:.1f} | Static: {is_static}<br>
+<img src="data:image/jpeg;base64,{b64}" width="{min(w, 320)}">
+</div>''')
+                        except Exception as e:
+                            html_parts.append(
+                                f'<div class="card bad">Index {idx} [{bname}]: exception: {e}</div>')
+
+                html_parts.append("</body></html>")
+                self.wfile.write("".join(html_parts).encode())
 
             def log_message(self, format, *args):
                 pass  # Suppress HTTP access logs
