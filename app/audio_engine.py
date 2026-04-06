@@ -36,6 +36,8 @@ except ImportError:
     logger.info("scikit-learn not available. Using heuristic audio classifier only.")
 
 _DEFAULT_TRAINING_DIR = Path.home() / "GolfSwings" / "training_data"
+TRAINING_DATA_DIR = _DEFAULT_TRAINING_DIR
+CLASSIFIER_PATH = TRAINING_DATA_DIR / "audio_classifier.pkl"
 
 
 # ============================================================================
@@ -161,8 +163,8 @@ class AudioClassifier:
         self.mode = "heuristic"
         self.model = None
         self.scaler = None
-        self.training_dir = training_dir or _DEFAULT_TRAINING_DIR
-        self.classifier_path = self.training_dir / "audio_classifier.pkl"
+        self.training_dir = training_dir or TRAINING_DATA_DIR
+        self.classifier_path = CLASSIFIER_PATH if training_dir is None else self.training_dir / "audio_classifier.pkl"
         self._load_model()
 
     def _load_model(self):
@@ -488,6 +490,7 @@ class MicPreview(QThread):
     """Lightweight mic preview that emits RMS levels without classification."""
 
     level_update = pyqtSignal(float)       # 0.0–1.0 RMS level
+    stream_state = pyqtSignal(bool)        # True when input stream opened successfully
     finished_preview = pyqtSignal()
 
     def __init__(self, device_index, sample_rate=44100, chunk_size=1024, duration=0):
@@ -531,8 +534,10 @@ class MicPreview(QThread):
             except Exception as e:
                 logger.error("MicPreview audio error: %s", e)
                 p.terminate()
+                self.stream_state.emit(False)
                 self.finished_preview.emit()
                 return
+        self.stream_state.emit(True)
 
         deadline = (time.time() + self.duration) if self.duration > 0 else 0
         try:

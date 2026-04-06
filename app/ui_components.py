@@ -945,6 +945,8 @@ class QTextEditLogHandler(logging.Handler):
 class LogPanel(QWidget):
     """Scrollable log output panel."""
 
+    report_requested = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -960,6 +962,19 @@ class LogPanel(QWidget):
         """)
         layout.addWidget(self.text_edit)
 
+        btn_row = QHBoxLayout()
+
+        report_btn = QPushButton("Report Bug")
+        report_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4a9eff; color: white;
+                border: none; border-radius: 4px; padding: 4px 8px;
+            }
+            QPushButton:hover { background-color: #5aafff; }
+        """)
+        report_btn.clicked.connect(self.report_requested.emit)
+        btn_row.addWidget(report_btn)
+
         clear_btn = QPushButton("Clear Log")
         clear_btn.setStyleSheet("""
             QPushButton {
@@ -969,7 +984,9 @@ class LogPanel(QWidget):
             QPushButton:hover { background-color: #4d4d4d; }
         """)
         clear_btn.clicked.connect(self.text_edit.clear)
-        layout.addWidget(clear_btn)
+        btn_row.addWidget(clear_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
 
         self._max_lines = 500
 

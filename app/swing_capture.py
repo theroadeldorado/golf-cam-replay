@@ -18,14 +18,18 @@ Features:
 
 import sys
 import os
+import json
 import logging
 import logging.handlers
+import platform
 import threading
 import time
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
+import urllib.request
+import urllib.error
 
 import cv2
 import numpy as np
@@ -36,7 +40,7 @@ from PyQt6.QtWidgets import (
     QGroupBox, QSpinBox, QDoubleSpinBox,
     QCheckBox, QMessageBox, QFileDialog, QMenu, QStatusBar,
     QSizePolicy, QDialog, QDialogButtonBox, QListWidget, QListWidgetItem,
-    QProgressBar, QTabWidget, QLineEdit, QToolBar,
+    QProgressBar, QTabWidget, QLineEdit, QToolBar, QTextEdit,
 )
 from PyQt6.QtCore import (
     Qt, QTimer, QThread, pyqtSignal, QSize, QPoint, QRect,
@@ -958,29 +962,135 @@ class NetworkCameraDialog(QDialog):
 
 
 # ============================================================================
-# Camera Picker Dialog (live preview)
+# Device Selection Helpers
 # ============================================================================
 
-class _CameraPickerDialog(QDialog):
-    """Dialog that shows detected cameras with a live preview for identification."""
+def _frame_to_pixmap(frame: Optional[np.ndarray], target_size: QSize) -> QPixmap:
+    if frame is None:
+        blank = QPixmap(target_size)
+        blank.fill(QColor("#0a0a0a"))
+        return blank
 
-    def __init__(self, cameras: list, slots_left: int, parent=None):
-        """
-        cameras: list of (index, resolution_str, cv2.VideoCapture)
-        slots_left: how many more cameras can be added (1 or 2)
-        """
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    h, w, ch = rgb.shape
+    q_img = QImage(rgb.tobytes(), w, h, ch * w, QImage.Format.Format_RGB888)
+    return QPixmap.fromImage(q_img).scaled(
+        target_size,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+
+
+def _tail_log_file(path: Path, max_lines: int = 200) -> str:
+    try:
+        if not path.exists():
+            return ""
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        return "".join(lines[-max_lines:]).strip()
+    except Exception:
+        return ""
+
+
+class _BusyDialog(QDialog):
+    """Simple modal progress dialog for camera and I/O detection work."""
+
+    def __init__(self, title: str, message: str, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Select Camera")
-        self.setMinimumSize(500, 420)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.setFixedSize(320, 120)
+        self.setStyleSheet("""
+            QDialog { background-color: #1c1c1c; }
+            QLabel { color: #d4d4d4; font-size: 13px; }
+            QProgressBar {
+                background-color: #252525; border: none; border-radius: 4px;
+                text-align: center; color: #d4d4d4;
+            }
+            QProgressBar::chunk { background-color: #4a9eff; border-radius: 4px; }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+        layout.addWidget(QLabel(message))
+
+        bar = QProgressBar()
+        bar.setRange(0, 0)
+        layout.addWidget(bar)
+
+
+class _UsbCameraScanThread(QThread):
+    """Scan USB camera indices off the UI thread and capture preview frames."""
+
+    scan_finished = pyqtSignal(list)
+    scan_failed = pyqtSignal(str)
+
+    def __init__(self, max_index: int = 10):
+        super().__init__()
+        self.max_index = max_index
+
+    def run(self):
+        try:
+            if sys.platform == "win32":
+                backends = [("DSHOW", cv2.CAP_DSHOW), ("MSMF", cv2.CAP_MSMF), ("ANY", cv2.CAP_ANY)]
+            else:
+                backends = [("ANY", cv2.CAP_ANY)]
+
+            cameras = []
+            for idx in range(self.max_index):
+                frame = None
+                backend_name = ""
+                for name, backend in backends:
+                    cap = cv2.VideoCapture(idx, backend)
+                    try:
+                        if not cap.isOpened():
+                            continue
+                        ret, candidate = cap.read()
+                        if ret and candidate is not None:
+                            frame = candidate
+                            backend_name = name
+                            break
+                    finally:
+                        cap.release()
+
+                if frame is None:
+                    continue
+
+                height, width = frame.shape[:2]
+                brightness = float(np.mean(frame))
+                is_black = brightness < 5.0
+                cameras.append({
+                    "id": idx,
+                    "label": f"USB Camera {idx}",
+                    "resolution": f"{width}x{height}",
+                    "backend": backend_name,
+                    "frame": frame,
+                    "brightness": brightness,
+                    "is_black": is_black,
+                })
+
+            self.scan_finished.emit(cameras)
+        except Exception as e:
+            self.scan_failed.emit(str(e))
+
+
+class _UsbCameraSelectionDialog(QDialog):
+    """Scan-time USB camera selector with checkbox-based multi-select."""
+
+    def __init__(self, cameras: List[Dict[str, Any]], selected_ids: set, max_selected: int, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Choose USB Cameras")
+        self.setMinimumSize(620, 500)
         self.setStyleSheet("""
             QDialog { background-color: #1c1c1c; }
             QLabel { color: #d4d4d4; }
             QListWidget {
                 background-color: #141414; border: 1px solid #3a3a3a;
-                border-radius: 4px; color: #d4d4d4; font-size: 13px;
+                border-radius: 6px; color: #d4d4d4;
             }
-            QListWidget::item { padding: 6px; }
-            QListWidget::item:selected { background-color: #4a9eff; }
+            QListWidget::item { padding: 8px; }
+            QListWidget::item:selected { background-color: #2d4d7d; }
             QPushButton {
                 background-color: #4a9eff; color: white; border: none;
                 border-radius: 4px; padding: 8px 16px; font-weight: bold;
@@ -988,36 +1098,46 @@ class _CameraPickerDialog(QDialog):
             QPushButton:hover { background-color: #5aafff; }
         """)
 
-        self._cameras = cameras  # [(idx, res, cap), ...]
-        self._slots_left = slots_left
-        self.selected_indices = []
+        self._cameras = cameras
+        self._camera_by_id = {cam["id"]: cam for cam in cameras}
+        self._selected_ids = set(selected_ids)
+        self._max_selected = max_selected
+        self.selected_camera_ids: List[int] = []
+        self._mutating_items = False
 
         layout = QVBoxLayout(self)
+        layout.setSpacing(10)
 
-        hint = (f"Found {len(cameras)} camera(s). Select one to add:"
-                if slots_left == 1 else
-                f"Found {len(cameras)} camera(s). Select up to {slots_left} to add:")
-        layout.addWidget(QLabel(hint))
+        hint = QLabel(
+            "Choose up to 2 total cameras. Black feeds are skipped only for this scan, "
+            "so a covered or dark camera is not locked out permanently."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        layout.addWidget(hint)
 
-        # Camera list
+        self._selection_label = QLabel("")
+        self._selection_label.setStyleSheet("color: #7fb6ff; font-size: 12px;")
+        layout.addWidget(self._selection_label)
+
         self._cam_list = QListWidget()
-        for idx, res, _ in cameras:
-            self._cam_list.addItem(f"USB Camera {idx}  ({res})")
-        if slots_left > 1:
-            self._cam_list.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
-        self._cam_list.currentRowChanged.connect(self._on_selection_changed)
-        layout.addWidget(self._cam_list)
+        self._cam_list.currentRowChanged.connect(self._update_preview)
+        self._cam_list.itemChanged.connect(self._on_item_changed)
+        layout.addWidget(self._cam_list, stretch=1)
 
-        # Live preview
         self._preview_label = QLabel()
-        self._preview_label.setFixedHeight(240)
+        self._preview_label.setFixedHeight(220)
         self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._preview_label.setStyleSheet(
-            "background-color: #0a0a0a; border: 1px solid #3a3a3a; border-radius: 4px;"
+            "background-color: #0a0a0a; border: 1px solid #3a3a3a; border-radius: 6px;"
         )
         layout.addWidget(self._preview_label)
 
-        # Buttons
+        self._status_label = QLabel("")
+        self._status_label.setWordWrap(True)
+        self._status_label.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        layout.addWidget(self._status_label)
+
         btn_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -1025,45 +1145,417 @@ class _CameraPickerDialog(QDialog):
         btn_box.rejected.connect(self.reject)
         layout.addWidget(btn_box)
 
-        # Preview refresh timer
-        self._preview_timer = QTimer(self)
-        self._preview_timer.timeout.connect(self._refresh_preview)
-        self._preview_timer.start(66)  # ~15 fps
+        self._populate_items()
 
-        # Select first camera
-        self._cam_list.setCurrentRow(0)
+    def _populate_items(self):
+        self._mutating_items = True
+        self._cam_list.clear()
+        for cam in self._cameras:
+            descriptor = f"{cam['label']}  ({cam['resolution']}, {cam['backend']})"
+            if cam["is_black"]:
+                descriptor += "  • black/covered in this scan"
 
-    def _on_selection_changed(self, row: int):
-        """Immediately refresh preview when a different camera is selected."""
-        self._refresh_preview()
+            item = QListWidgetItem(descriptor)
+            item.setData(Qt.ItemDataRole.UserRole, cam["id"])
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsSelectable)
+            item.setCheckState(
+                Qt.CheckState.Checked if cam["id"] in self._selected_ids else Qt.CheckState.Unchecked
+            )
 
-    def _refresh_preview(self):
-        row = self._cam_list.currentRow()
-        if row < 0 or row >= len(self._cameras):
-            return
-        _, _, cap = self._cameras[row]
-        ret, frame = cap.read()
-        if not ret or frame is None:
-            return
+            if cam["is_black"] and cam["id"] not in self._selected_ids:
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                item.setForeground(QColor("#777777"))
+            self._cam_list.addItem(item)
 
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        h, w, ch = rgb.shape
-        q_img = QImage(rgb.tobytes(), w, h, ch * w, QImage.Format.Format_RGB888)
-        scaled = q_img.scaled(
-            self._preview_label.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
+        self._mutating_items = False
+        self._update_selection_label()
+        initial_row = 0
+        for row in range(self._cam_list.count()):
+            if self._cam_list.item(row).data(Qt.ItemDataRole.UserRole) in self._selected_ids:
+                initial_row = row
+                break
+        if self._cam_list.count() > 0:
+            self._cam_list.setCurrentRow(initial_row)
+
+    def _checked_ids(self) -> List[int]:
+        ids = []
+        for row in range(self._cam_list.count()):
+            item = self._cam_list.item(row)
+            if item.checkState() == Qt.CheckState.Checked:
+                ids.append(int(item.data(Qt.ItemDataRole.UserRole)))
+        return ids
+
+    def _update_selection_label(self):
+        checked = self._checked_ids()
+        self._selection_label.setText(
+            f"Selected: {len(checked)} / {self._max_selected or 0} USB camera slot(s)"
         )
-        self._preview_label.setPixmap(QPixmap.fromImage(scaled))
+
+    def _on_item_changed(self, item: QListWidgetItem):
+        if self._mutating_items:
+            return
+
+        checked = self._checked_ids()
+        if len(checked) > self._max_selected:
+            self._mutating_items = True
+            item.setCheckState(Qt.CheckState.Unchecked)
+            self._mutating_items = False
+            self._status_label.setText("ReplaySwing supports at most 2 total cameras.")
+            return
+
+        self._selected_ids = set(checked)
+        self._update_selection_label()
+
+    def _update_preview(self, row: int):
+        if row < 0 or row >= self._cam_list.count():
+            return
+        item = self._cam_list.item(row)
+        cam_id = int(item.data(Qt.ItemDataRole.UserRole))
+        cam = self._camera_by_id.get(cam_id)
+        if cam is None:
+            return
+
+        self._preview_label.setPixmap(_frame_to_pixmap(cam.get("frame"), self._preview_label.size()))
+        status_bits = [
+            f"USB Camera {cam_id}",
+            f"Resolution: {cam['resolution']}",
+            f"Backend: {cam['backend']}",
+            f"Brightness: {cam['brightness']:.1f}",
+        ]
+        if cam["is_black"]:
+            status_bits.append("This feed looked black during this scan, so it is not offered as a new camera.")
+        else:
+            status_bits.append("Feed looked usable during this scan.")
+        self._status_label.setText(" | ".join(status_bits))
 
     def _on_accept(self):
-        self.selected_indices = [idx.row() for idx in self._cam_list.selectedIndexes()]
-        self._preview_timer.stop()
+        self.selected_camera_ids = self._checked_ids()
         self.accept()
 
-    def reject(self):
-        self._preview_timer.stop()
-        super().reject()
+
+class _AudioDevicePickerDialog(QDialog):
+    """Audio device chooser with live level meters."""
+
+    def __init__(self, devices: List[Dict[str, Any]], current_index, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Choose Microphone")
+        self.setMinimumSize(640, 520)
+        self.setStyleSheet("""
+            QDialog { background-color: #1c1c1c; }
+            QLabel { color: #d4d4d4; }
+            QListWidget {
+                background-color: #141414; border: 1px solid #3a3a3a;
+                border-radius: 6px; color: #d4d4d4;
+            }
+            QListWidget::item:selected { background-color: #2d4d7d; }
+            QProgressBar {
+                background-color: #252525; border: none; border-radius: 4px;
+                text-align: center; color: #d4d4d4;
+            }
+            QProgressBar::chunk { background-color: #4fc3f7; border-radius: 4px; }
+            QPushButton {
+                background-color: #4a9eff; color: white; border: none;
+                border-radius: 4px; padding: 8px 16px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #5aafff; }
+        """)
+
+        self._devices = devices
+        self.selected_device_index = current_index
+        self._row_widgets: Dict[Any, Dict[str, QWidget]] = {}
+        self._preview_thread: Optional[MicPreview] = None
+        self._preview_device_index = None
+        self._probe_pos = 0
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        hint = QLabel(
+            "Talk near the microphone while this window is open. ReplaySwing cycles through "
+            "the available inputs and marks each device as Ready when Windows lets the app open it."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        layout.addWidget(hint)
+
+        self._scan_label = QLabel("Listening for active microphones…")
+        self._scan_label.setStyleSheet("color: #7fb6ff; font-size: 12px;")
+        layout.addWidget(self._scan_label)
+
+        self._device_list = QListWidget()
+        layout.addWidget(self._device_list, stretch=1)
+
+        btn_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btn_box.accepted.connect(self._on_accept)
+        btn_box.rejected.connect(self.reject)
+        layout.addWidget(btn_box)
+
+        self._decay_timer = QTimer(self)
+        self._decay_timer.timeout.connect(self._decay_levels)
+        self._decay_timer.start(100)
+
+        self._populate_items()
+        QTimer.singleShot(0, self._start_next_probe)
+
+    def _populate_items(self):
+        selected_row = 0
+        for row, dev in enumerate(self._devices):
+            item = QListWidgetItem()
+            item.setData(Qt.ItemDataRole.UserRole, dev["index"])
+
+            widget = QWidget()
+            widget_layout = QVBoxLayout(widget)
+            widget_layout.setContentsMargins(10, 8, 10, 8)
+            widget_layout.setSpacing(4)
+
+            name = dev["name"]
+            if dev.get("is_virtual"):
+                name += " (phone mic)"
+
+            title = QLabel(name)
+            title.setStyleSheet("color: #f0f0f0; font-weight: bold;")
+            widget_layout.addWidget(title)
+
+            meta = QLabel(
+                f"{dev.get('channels', 1)} ch • {dev.get('sample_rate', 44100)} Hz"
+                + (" • Windows default" if dev.get("index") is None else "")
+            )
+            meta.setStyleSheet("color: #8a8a8a; font-size: 11px;")
+            widget_layout.addWidget(meta)
+
+            bar_row = QHBoxLayout()
+            bar = QProgressBar()
+            bar.setMaximum(100)
+            bar.setTextVisible(False)
+            bar.setValue(0)
+            bar_row.addWidget(bar, stretch=1)
+
+            status = QLabel("Waiting")
+            status.setStyleSheet("color: #8a8a8a; font-size: 11px;")
+            bar_row.addWidget(status)
+            widget_layout.addLayout(bar_row)
+
+            item.setSizeHint(widget.sizeHint())
+            self._device_list.addItem(item)
+            self._device_list.setItemWidget(item, widget)
+            self._row_widgets[dev["index"]] = {"bar": bar, "status": status}
+
+            if dev["index"] == self.selected_device_index:
+                selected_row = row
+
+        if self._device_list.count() > 0:
+            self._device_list.setCurrentRow(selected_row)
+
+    def _start_next_probe(self):
+        if not self._devices or self._preview_thread is not None:
+            return
+
+        dev = self._devices[self._probe_pos % len(self._devices)]
+        self._probe_pos += 1
+        self._preview_device_index = dev["index"]
+
+        row = self._row_widgets.get(dev["index"])
+        if row:
+            row["status"].setText("Listening…")
+
+        self._preview_thread = MicPreview(
+            device_index=dev["index"],
+            sample_rate=dev.get("sample_rate", 44100),
+            duration=0.45,
+        )
+        self._preview_thread.stream_state.connect(self._on_probe_state)
+        self._preview_thread.level_update.connect(self._on_probe_level)
+        self._preview_thread.finished_preview.connect(self._on_probe_finished)
+        self._preview_thread.start()
+
+    def _on_probe_state(self, opened: bool):
+        row = self._row_widgets.get(self._preview_device_index)
+        if not row:
+            return
+        row["status"].setText("Ready" if opened else "Unavailable")
+        row["status"].setStyleSheet(
+            "color: #34d17e; font-size: 11px;" if opened else "color: #e84c3c; font-size: 11px;"
+        )
+
+    def _on_probe_level(self, level: float):
+        row = self._row_widgets.get(self._preview_device_index)
+        if not row:
+            return
+        bar = row["bar"]
+        bar.setValue(max(bar.value(), int(level * 100)))
+
+    def _on_probe_finished(self):
+        self._preview_thread = None
+        self._preview_device_index = None
+        QTimer.singleShot(80, self._start_next_probe)
+
+    def _decay_levels(self):
+        for row in self._row_widgets.values():
+            bar = row["bar"]
+            bar.setValue(max(0, bar.value() - 6))
+
+    def _on_accept(self):
+        item = self._device_list.currentItem()
+        self.selected_device_index = item.data(Qt.ItemDataRole.UserRole) if item else None
+        self.accept()
+
+    def closeEvent(self, event):
+        self._decay_timer.stop()
+        if self._preview_thread is not None and self._preview_thread.isRunning():
+            self._preview_thread.stop()
+            self._preview_thread.wait(2000)
+        super().closeEvent(event)
+
+
+class _BugReportSubmitThread(QThread):
+    """Submit a bug report to the website-backed GitHub issue endpoint."""
+
+    finished_submission = pyqtSignal(bool, str)
+
+    def __init__(self, payload: Dict[str, Any], parent=None):
+        super().__init__(parent)
+        self._payload = payload
+
+    def run(self):
+        try:
+            req = urllib.request.Request(
+                "https://replayswing.com/api/bug-report",
+                data=json.dumps(self._payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            if body.get("success"):
+                self.finished_submission.emit(True, "Bug report submitted.")
+            else:
+                self.finished_submission.emit(False, body.get("error", "Bug report failed."))
+        except urllib.error.HTTPError as e:
+            try:
+                body = json.loads(e.read().decode("utf-8"))
+                message = body.get("error", f"HTTP {e.code}")
+            except Exception:
+                message = f"HTTP {e.code}"
+            self.finished_submission.emit(False, message)
+        except Exception as e:
+            self.finished_submission.emit(False, str(e))
+
+
+class BugReportDialog(QDialog):
+    """Collect a bug report and recent logs for GitHub issue submission."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Report a Bug")
+        self.setMinimumSize(560, 460)
+        self.setStyleSheet("""
+            QDialog { background-color: #1c1c1c; }
+            QLabel { color: #d4d4d4; }
+            QLineEdit, QTextEdit {
+                background-color: #252525; color: #d4d4d4;
+                border: 1px solid #3a3a3a; border-radius: 4px; padding: 6px 8px;
+            }
+            QPushButton {
+                background-color: #4a9eff; color: white; border: none;
+                border-radius: 4px; padding: 8px 16px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #5aafff; }
+            QCheckBox { color: #d4d4d4; }
+            QProgressBar {
+                background-color: #252525; border: none; border-radius: 4px;
+                text-align: center; color: #d4d4d4;
+            }
+            QProgressBar::chunk { background-color: #4a9eff; border-radius: 4px; }
+        """)
+
+        self._submit_thread: Optional[_BugReportSubmitThread] = None
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        intro = QLabel(
+            "Describe the problem and ReplaySwing will send the report with recent logs. "
+            "Name and email are optional. Screenshots and video upload can come later."
+        )
+        intro.setWordWrap(True)
+        intro.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        layout.addWidget(intro)
+
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Name (optional)")
+        layout.addWidget(self.name_input)
+
+        self.email_input = QLineEdit()
+        self.email_input.setPlaceholderText("Email (optional)")
+        layout.addWidget(self.email_input)
+
+        self.description_input = QTextEdit()
+        self.description_input.setPlaceholderText("What went wrong? What camera or mic were you using? What did you expect to happen?")
+        layout.addWidget(self.description_input, stretch=1)
+
+        self.include_logs_check = QCheckBox("Include recent logs (recommended)")
+        self.include_logs_check.setChecked(True)
+        layout.addWidget(self.include_logs_check)
+
+        self.status_label = QLabel("")
+        self.status_label.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        layout.addWidget(self.status_label)
+
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)
+        self.progress.setVisible(False)
+        layout.addWidget(self.progress)
+
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        self.button_box.accepted.connect(self._submit)
+        self.button_box.rejected.connect(self.reject)
+        self.submit_btn = self.button_box.button(QDialogButtonBox.StandardButton.Ok)
+        self.submit_btn.setText("Send Report")
+        layout.addWidget(self.button_box)
+
+    def _set_busy(self, busy: bool):
+        self.progress.setVisible(busy)
+        self.submit_btn.setEnabled(not busy)
+        self.button_box.button(QDialogButtonBox.StandardButton.Cancel).setEnabled(not busy)
+
+    def _submit(self):
+        description = self.description_input.toPlainText().strip()
+        if not description:
+            QMessageBox.information(self, "Description Required", "Please describe the bug before sending.")
+            return
+
+        title_line = next((line.strip() for line in description.splitlines() if line.strip()), "Desktop bug report")
+        payload = {
+            "title": title_line[:80],
+            "description": description,
+            "reporterName": self.name_input.text().strip(),
+            "reporterEmail": self.email_input.text().strip(),
+            "appVersion": __version__,
+            "platform": platform.platform(),
+            "source": "desktop-app",
+        }
+
+        if self.include_logs_check.isChecked():
+            payload["logs"] = _tail_log_file(LOG_DIR / "swing_capture.log")
+
+        self.status_label.setText("Submitting report…")
+        self._set_busy(True)
+        self._submit_thread = _BugReportSubmitThread(payload, self)
+        self._submit_thread.finished_submission.connect(self._on_submit_finished)
+        self._submit_thread.start()
+
+    def _on_submit_finished(self, success: bool, message: str):
+        self._set_busy(False)
+        self.status_label.setText(message)
+        self.status_label.setStyleSheet(
+            "color: #34d17e; font-size: 12px;" if success else "color: #e84c3c; font-size: 12px;"
+        )
+        if success:
+            self.accept()
 
 
 # ============================================================================
@@ -1111,6 +1603,15 @@ class CameraSettingsDialog(QDialog):
         self._current_edit_row = -1
 
         layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        intro = QLabel(
+            "Pick up to 2 total cameras. USB camera selection rescans devices each time, "
+            "shows a preview, and only ignores black feeds for the current scan."
+        )
+        intro.setWordWrap(True)
+        intro.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        layout.addWidget(intro)
 
         # ---- Add Network Camera (prominent) ----
         network_btn = QPushButton("Add Network Camera")
@@ -1128,8 +1629,8 @@ class CameraSettingsDialog(QDialog):
 
         # Camera actions
         btn_row = QHBoxLayout()
-        scan_usb_btn = QPushButton("Add USB Camera")
-        scan_usb_btn.setToolTip("Scan for USB webcams and pick which one to add (max 2 cameras)")
+        scan_usb_btn = QPushButton("Choose USB Cameras")
+        scan_usb_btn.setToolTip("Rescan USB cameras, preview them, and choose which ones ReplaySwing should use")
         scan_usb_btn.clicked.connect(self._detect_usb)
         btn_row.addWidget(scan_usb_btn)
 
@@ -1262,86 +1763,59 @@ class CameraSettingsDialog(QDialog):
         self._save_row_settings(self.camera_list.currentRow())
 
     def _detect_usb(self):
-        if len(self._presets) >= 2:
-            QMessageBox.information(self, "Limit Reached",
-                                   "Maximum 2 cameras allowed. Remove one first.")
-            return
-
         existing_usb_ids = {p.id for p in self._presets if p.type == "usb"}
-        if sys.platform == "win32":
-            backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
-        else:
-            backends = [cv2.CAP_ANY]
+        network_count = sum(1 for p in self._presets if p.type == "network")
+        max_usb = max(0, 2 - network_count)
 
-        # Scan indices 0-9, keeping accepted cameras held open so that
-        # duplicate indices for the same physical device are blocked.
-        found = []  # [(index, resolution_str, cap)]
-        accepted_frames = []
-
-        for i in range(10):
-            if i in existing_usb_ids:
-                continue
-            frame = None
-            cap = None
-            for backend in backends:
-                test_cap = cv2.VideoCapture(i, backend)
-                if test_cap.isOpened():
-                    ret, f = test_cap.read()
-                    if ret and f is not None:
-                        brightness = float(np.mean(f))
-                        if brightness >= 5.0:
-                            # Non-black frame — this backend works
-                            frame = f
-                            cap = test_cap
-                            break
-                        else:
-                            logger.info("USB scan: index %d backend %s produces black frames, trying next", i, backend)
-                            test_cap.release()
-                    else:
-                        test_cap.release()
-                else:
-                    test_cap.release()
-
-            if frame is None:
-                continue
-
-            # Dedup by grayscale comparison
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            small = cv2.resize(gray, (64, 48)).astype(np.float32)
-            is_dup = False
-            for accepted in accepted_frames:
-                if np.mean(np.abs(small - accepted)) < 15.0:
-                    is_dup = True
-                    break
-
-            if not is_dup:
-                h, w = frame.shape[:2]
-                found.append((i, f"{w}x{h}", cap))
-                accepted_frames.append(small)
-            else:
-                if cap:
-                    cap.release()
-
-        if not found:
-            QMessageBox.information(self, "No Cameras Found",
-                                   "No new USB cameras detected.")
+        if max_usb <= 0 and not existing_usb_ids:
+            QMessageBox.information(
+                self,
+                "Limit Reached",
+                "Two network cameras are already configured. Remove one before adding a USB camera.",
+            )
             return
 
-        # Show picker dialog with live preview
-        slots_left = 2 - len(self._presets)
-        dlg = _CameraPickerDialog(found, slots_left, self)
-        result = dlg.exec()
+        busy = _BusyDialog("Detecting Cameras", "Scanning USB cameras and grabbing previews…", self)
+        thread = _UsbCameraScanThread(max_index=10)
+        result: Dict[str, Any] = {}
 
-        # Release all held cameras
-        for _, _, cap in found:
-            cap.release()
+        def _on_finished(cameras):
+            result["cameras"] = cameras
+            busy.accept()
 
-        if result != QDialog.DialogCode.Accepted:
+        def _on_failed(message):
+            result["error"] = message
+            busy.accept()
+
+        thread.scan_finished.connect(_on_finished)
+        thread.scan_failed.connect(_on_failed)
+        thread.start()
+        busy.exec()
+        thread.wait(1000)
+
+        if result.get("error"):
+            QMessageBox.warning(self, "Camera Scan Failed", result["error"])
             return
 
-        for idx in dlg.selected_indices:
-            cam_idx, res, _ = found[idx]
-            self._presets.append(CameraPreset(id=cam_idx, type="usb", label=f"USB Camera {cam_idx}"))
+        cameras = result.get("cameras", [])
+        if not cameras:
+            QMessageBox.information(self, "No Cameras Found", "No USB cameras responded during this scan.")
+            return
+
+        dlg = _UsbCameraSelectionDialog(cameras, existing_usb_ids, max_usb, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        existing_usb = {p.id: p for p in self._presets if p.type == "usb"}
+        selected_usb = []
+        for cam_id in dlg.selected_camera_ids:
+            preset = existing_usb.get(cam_id)
+            if preset is None:
+                preset = CameraPreset(id=cam_id, type="usb", label=f"USB Camera {cam_id}")
+            selected_usb.append(preset)
+
+        network_presets = [p for p in self._presets if p.type == "network"]
+        self._presets = selected_usb + network_presets
 
         self._refresh_list()
 
@@ -1851,56 +2325,41 @@ class MainWindow(QMainWindow):
         audio_group = QGroupBox("Audio Settings")
         audio_group_layout = QVBoxLayout(audio_group)
 
-        audio_dev_row = QHBoxLayout()
-        audio_dev_row.addWidget(QLabel("Audio Device:"))
         self.audio_device_combo = QComboBox()
-        self.audio_device_combo.addItem("Default", None)
-        virtual_mic_index = None
-        for dev in enumerate_audio_devices():
-            name = dev["name"][:30]
-            if dev.get("is_virtual"):
-                name += " (phone mic)"
-            self.audio_device_combo.addItem(name, dev["index"])
-            if dev.get("is_virtual") and virtual_mic_index is None:
-                virtual_mic_index = self.audio_device_combo.count() - 1
-        if self.config.audio_device_index is not None:
-            # Try matching by saved device name first (indices shift across reboots)
-            matched = False
-            if self.config.audio_device_name:
-                for i in range(self.audio_device_combo.count()):
-                    if self.config.audio_device_name in (self.audio_device_combo.itemText(i) or ""):
-                        self.audio_device_combo.setCurrentIndex(i)
-                        self.config.audio_device_index = self.audio_device_combo.itemData(i)
-                        matched = True
-                        break
-            # Fall back to saved index
-            if not matched:
-                for i in range(self.audio_device_combo.count()):
-                    if self.audio_device_combo.itemData(i) == self.config.audio_device_index:
-                        self.audio_device_combo.setCurrentIndex(i)
-                        break
-        elif virtual_mic_index is not None:
-            # Auto-select phone virtual mic when no device is configured
-            self.audio_device_combo.setCurrentIndex(virtual_mic_index)
-            self.config.audio_device_index = self.audio_device_combo.itemData(virtual_mic_index)
-            logger.info("Auto-selected virtual phone mic: %s",
-                        self.audio_device_combo.currentText())
         self.audio_device_combo.currentIndexChanged.connect(self._on_audio_device_changed)
-        audio_dev_row.addWidget(self.audio_device_combo, stretch=1)
+
+        audio_dev_row = QHBoxLayout()
+        audio_dev_row.addWidget(QLabel("Microphone:"))
+        self.audio_device_summary = QLabel("Detecting microphones…")
+        self.audio_device_summary.setStyleSheet("color: #d4d4d4;")
+        self.audio_device_summary.setWordWrap(True)
+        audio_dev_row.addWidget(self.audio_device_summary, stretch=1)
+
+        self.choose_audio_btn = QPushButton("Choose…")
+        self.choose_audio_btn.setToolTip("Open a microphone picker with live level meters")
+        self.choose_audio_btn.clicked.connect(self._show_audio_picker)
+        audio_dev_row.addWidget(self.choose_audio_btn)
 
         refresh_audio_btn = QPushButton("Refresh")
-        refresh_audio_btn.setToolTip("Rescan audio devices (use after connecting DroidCam or other virtual mic)")
+        refresh_audio_btn.setToolTip("Rescan audio devices and update the picker list")
         refresh_audio_btn.setFixedWidth(70)
         refresh_audio_btn.clicked.connect(self._refresh_audio_devices)
         audio_dev_row.addWidget(refresh_audio_btn)
 
-        self.test_mic_btn = QPushButton("Test")
-        self.test_mic_btn.setToolTip("Preview audio level from the selected mic (auto-starts on device change)")
-        self.test_mic_btn.setFixedWidth(50)
+        self.test_mic_btn = QPushButton("Preview")
+        self.test_mic_btn.setToolTip("Start or stop a live preview of the selected microphone")
+        self.test_mic_btn.setFixedWidth(70)
         self.test_mic_btn.clicked.connect(self._test_mic)
         audio_dev_row.addWidget(self.test_mic_btn)
 
         audio_group_layout.addLayout(audio_dev_row)
+
+        self.audio_device_help = QLabel(
+            "Open the picker and say “test” near the mic you want. ReplaySwing marks devices as Ready when it can open them."
+        )
+        self.audio_device_help.setWordWrap(True)
+        self.audio_device_help.setStyleSheet("color: #8a8a8a; font-size: 11px;")
+        audio_group_layout.addWidget(self.audio_device_help)
 
         self.mic_preview_bar = QProgressBar()
         self.mic_preview_bar.setMaximum(100)
@@ -1925,6 +2384,11 @@ class MainWindow(QMainWindow):
         thr_row.addWidget(self.threshold_label)
         audio_group_layout.addLayout(thr_row)
 
+        self.threshold_help_label = QLabel("")
+        self.threshold_help_label.setWordWrap(True)
+        self.threshold_help_label.setStyleSheet("color: #8a8a8a; font-size: 11px;")
+        audio_group_layout.addWidget(self.threshold_help_label)
+
         conf_row = QHBoxLayout()
         conf_row.addWidget(QLabel("Confidence:"))
         self.confidence_bar = QProgressBar()
@@ -1938,12 +2402,14 @@ class MainWindow(QMainWindow):
         audio_group_layout.addLayout(conf_row)
 
         settings_layout.addWidget(audio_group)
+        self._refresh_audio_devices()
+        self._update_threshold_guidance()
 
         # Camera Settings group
         camera_group = QGroupBox("Camera Settings")
         camera_group_layout = QVBoxLayout(camera_group)
 
-        self.camera_btn = QPushButton("Configure Cameras")
+        self.camera_btn = QPushButton("Choose Cameras…")
         self.camera_btn.clicked.connect(self._show_camera_settings)
         camera_group_layout.addWidget(self.camera_btn)
 
@@ -1984,12 +2450,26 @@ class MainWindow(QMainWindow):
 
         settings_layout.addWidget(session_group)
 
+        support_group = QGroupBox("Support")
+        support_layout = QVBoxLayout(support_group)
+        support_hint = QLabel("Send a bug report with recent logs directly from the app.")
+        support_hint.setWordWrap(True)
+        support_hint.setStyleSheet("color: #8a8a8a; font-size: 11px;")
+        support_layout.addWidget(support_hint)
+
+        self.report_bug_btn = QPushButton("Report Bug with Logs")
+        self.report_bug_btn.clicked.connect(self._show_bug_report_dialog)
+        support_layout.addWidget(self.report_bug_btn)
+
+        settings_layout.addWidget(support_group)
+
         settings_layout.addStretch()
         self.right_tabs.addTab(settings_tab, "Settings")
 
         # Tab 4: Log
         self.log_panel = LogPanel()
         self.log_handler.signal.connect(self.log_panel.append_log)
+        self.log_panel.report_requested.connect(self._show_bug_report_dialog)
         self.right_tabs.addTab(self.log_panel, "Log")
 
         right_layout.addWidget(self.right_tabs, stretch=1)
@@ -2461,6 +2941,7 @@ class MainWindow(QMainWindow):
         self.config.audio_device_index = dev_idx
         # Save device name for reliable matching across reboots (indices can shift)
         self.config.audio_device_name = self.audio_device_combo.currentText() or ""
+        self._update_audio_device_summary()
         save_settings(self.config)
         # Restart audio if armed
         if self.is_armed:
@@ -2473,12 +2954,15 @@ class MainWindow(QMainWindow):
     def _refresh_audio_devices(self):
         """Rescan audio devices and update the combo box."""
         current_idx = self.audio_device_combo.currentData()
+        current_name = self.config.audio_device_name
         self.audio_device_combo.blockSignals(True)
         self.audio_device_combo.clear()
-        self.audio_device_combo.addItem("Default", None)
+        self.audio_device_combo.addItem("Windows Default Input", None)
         virtual_mic_index = None
-        for dev in enumerate_audio_devices():
-            name = dev["name"][:30]
+        devices = [{"index": None, "name": "Windows Default Input", "channels": 1, "sample_rate": 44100}]
+        devices.extend(enumerate_audio_devices())
+        for dev in devices[1:]:
+            name = dev["name"]
             if dev.get("is_virtual"):
                 name += " (phone mic)"
             self.audio_device_combo.addItem(name, dev["index"])
@@ -2487,7 +2971,13 @@ class MainWindow(QMainWindow):
 
         # Try to re-select previously selected device
         restored = False
-        if current_idx is not None:
+        if current_name:
+            for i in range(self.audio_device_combo.count()):
+                if current_name == (self.audio_device_combo.itemText(i) or ""):
+                    self.audio_device_combo.setCurrentIndex(i)
+                    restored = True
+                    break
+        if not restored and current_idx is not None:
             for i in range(self.audio_device_combo.count()):
                 if self.audio_device_combo.itemData(i) == current_idx:
                     self.audio_device_combo.setCurrentIndex(i)
@@ -2498,9 +2988,41 @@ class MainWindow(QMainWindow):
             self.config.audio_device_index = self.audio_device_combo.itemData(virtual_mic_index)
             logger.info("Auto-selected virtual phone mic: %s",
                         self.audio_device_combo.currentText())
+        elif not restored:
+            self.audio_device_combo.setCurrentIndex(0)
+        self.config.audio_device_index = self.audio_device_combo.currentData()
+        self.config.audio_device_name = self.audio_device_combo.currentText() or ""
         self.audio_device_combo.blockSignals(False)
+        self._update_audio_device_summary()
         logger.info("Audio devices refreshed, %d devices found",
-                    self.audio_device_combo.count() - 1)
+                    max(0, self.audio_device_combo.count() - 1))
+
+    def _show_audio_picker(self):
+        devices = [{"index": None, "name": "Windows Default Input", "channels": 1, "sample_rate": 44100}]
+        devices.extend(enumerate_audio_devices())
+        if not devices:
+            QMessageBox.information(self, "No Microphones Found", "No audio input devices are available.")
+            return
+
+        dlg = _AudioDevicePickerDialog(devices, self.audio_device_combo.currentData(), self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        selected = dlg.selected_device_index
+        for i in range(self.audio_device_combo.count()):
+            if self.audio_device_combo.itemData(i) == selected:
+                self.audio_device_combo.setCurrentIndex(i)
+                break
+
+    def _update_audio_device_summary(self):
+        if self.audio_device_combo.count() == 0:
+            self.audio_device_summary.setText("No microphone selected")
+            return
+
+        label = self.audio_device_combo.currentText() or "No microphone selected"
+        if self.audio_device_combo.currentData() is None:
+            label += " (system default)"
+        self.audio_device_summary.setText(label)
 
     def _test_mic(self):
         """Toggle mic preview on/off."""
@@ -2533,7 +3055,7 @@ class MainWindow(QMainWindow):
         self._update_mic_bar_style()
 
     def _on_mic_preview_finished(self):
-        self.test_mic_btn.setText("Test")
+        self.test_mic_btn.setText("Preview")
         self.mic_preview_bar.setValue(0)
         self._mic_preview_level = 0
         self._update_mic_bar_style()
@@ -2553,6 +3075,13 @@ class MainWindow(QMainWindow):
             QProgressBar {{ background-color: #252525; border: none; border-radius: 4px; }}
             QProgressBar::chunk {{ background-color: {color}; border-radius: 4px; }}
         """)
+
+    def _update_threshold_guidance(self):
+        value = int(self.config.audio_threshold * 100)
+        self.threshold_help_label.setText(
+            f"Lower = easier to trigger; use it if shots are being missed. "
+            f"Higher = stricter; raise it if you are getting false shots. Current setting: {value}%."
+        )
 
     # ------------------------------------------------------------------
     # Frame Handling
@@ -3244,6 +3773,7 @@ class MainWindow(QMainWindow):
         self.config.audio_threshold = threshold
         self.threshold_label.setText(f"{value}%")
         self._update_mic_bar_style()
+        self._update_threshold_guidance()
 
         if self.audio_detector:
             self.audio_detector.set_threshold(threshold)
@@ -3517,6 +4047,10 @@ class MainWindow(QMainWindow):
             self._rebuild_camera_dropdown()
             self._update_camera_status()
             self._refresh_phone_btn_state()
+
+    def _show_bug_report_dialog(self):
+        dialog = BugReportDialog(self)
+        dialog.exec()
 
     # ------------------------------------------------------------------
     # Session Management

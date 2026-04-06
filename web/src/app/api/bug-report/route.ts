@@ -37,7 +37,19 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, description, steps, expected, honeypot } = body;
+    const {
+      title,
+      description,
+      steps,
+      expected,
+      honeypot,
+      reporterName,
+      reporterEmail,
+      logs,
+      appVersion,
+      platform,
+      source,
+    } = body;
 
     // Honeypot check
     if (honeypot) {
@@ -46,12 +58,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Validation
-    if (!title || typeof title !== 'string' || title.trim().length === 0) {
-      return NextResponse.json({ error: 'Title is required.' }, { status: 400 });
-    }
     if (!description || typeof description !== 'string' || description.trim().length === 0) {
       return NextResponse.json({ error: 'Description is required.' }, { status: 400 });
     }
+
+    const normalizedTitle =
+      typeof title === 'string' && title.trim().length > 0
+        ? title.trim()
+        : description.trim().split('\n')[0].slice(0, 80) || 'Bug report';
 
     const token = process.env.GITHUB_TOKEN;
     if (!token) {
@@ -62,10 +76,22 @@ export async function POST(request: NextRequest) {
     }
 
     // Build issue body
+    const reporterBits = [
+      reporterName?.trim() ? `Name: ${reporterName.trim()}` : null,
+      reporterEmail?.trim() ? `Email: ${reporterEmail.trim()}` : null,
+      appVersion?.trim() ? `App Version: ${appVersion.trim()}` : null,
+      platform?.trim() ? `Platform: ${platform.trim()}` : null,
+      source?.trim() ? `Source: ${source.trim()}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
     const sections = [
       `## Description\n${description.trim()}`,
+      reporterBits ? `## Reporter\n${reporterBits}` : null,
       steps?.trim() ? `## Steps to Reproduce\n${steps.trim()}` : null,
       expected?.trim() ? `## Expected Behavior\n${expected.trim()}` : null,
+      logs?.trim() ? `## Logs\n\`\`\`\n${logs.trim().slice(0, 12000)}\n\`\`\`` : null,
       `---\n*Submitted via [replayswing.com](https://replayswing.com)*`,
     ]
       .filter(Boolean)
@@ -81,7 +107,7 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          title: `[Bug] ${title.trim()}`,
+          title: `[Bug] ${normalizedTitle}`,
           body: sections,
           labels: ['bug', 'user-reported'],
         }),
