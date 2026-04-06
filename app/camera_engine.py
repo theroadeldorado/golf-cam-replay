@@ -364,20 +364,27 @@ class CameraCapture(QThread):
         for backend_name, backend in backends:
             logger.debug("Camera %s: trying %s backend...", camera_id, backend_name)
             cap = cv2.VideoCapture(camera_id, backend)
-            ret = False
+            accepted = False
             try:
                 if cap.isOpened():
-                    ret, _ = cap.read()
-                    if ret:
-                        logger.info("Camera %s: opened with %s", camera_id, backend_name)
-                        return cap
-                    logger.debug("Camera %s: %s opened but read() failed", camera_id, backend_name)
+                    ret, frame = cap.read()
+                    if ret and frame is not None:
+                        brightness = float(np.mean(frame))
+                        if brightness < 5.0:
+                            logger.info("Camera %s: %s produces black frames (brightness=%.1f), trying next backend",
+                                        camera_id, backend_name, brightness)
+                        else:
+                            logger.info("Camera %s: opened with %s (brightness=%.1f)", camera_id, backend_name, brightness)
+                            accepted = True
+                            return cap
+                    else:
+                        logger.debug("Camera %s: %s opened but read() failed", camera_id, backend_name)
                 else:
                     logger.debug("Camera %s: %s backend isOpened()=False", camera_id, backend_name)
             except Exception as e:
                 logger.debug("Camera %s: %s backend exception: %s", camera_id, backend_name, e)
             finally:
-                if not ret:
+                if not accepted:
                     cap.release()
 
         logger.error("Camera %s: no working backend found", camera_id)
@@ -385,35 +392,38 @@ class CameraCapture(QThread):
 
     @staticmethod
     def find_real_usb_camera(max_index=5):
-        """Probe camera indices 0..max_index and return the first that
-        produces a non-black frame.  Returns the index, or 0 as fallback.
+        """Probe camera indices 0..max_index with all backends and return
+        the first that produces a non-black frame.  Returns the index,
+        or 0 as fallback.
 
         Used at first launch to skip virtual cameras (e.g. GSPro, OBS)
         that sit at low indices and output black frames.
         """
         import sys
-        backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
+        if sys.platform == "win32":
+            backends = [("DSHOW", cv2.CAP_DSHOW), ("MSMF", cv2.CAP_MSMF), ("ANY", cv2.CAP_ANY)]
+        else:
+            backends = [("ANY", cv2.CAP_ANY)]
 
         for idx in range(max_index):
-            cap = cv2.VideoCapture(idx, backend)
-            try:
-                if not cap.isOpened():
-                    continue
-                ret, frame = cap.read()
-                if not ret or frame is None:
-                    continue
-                brightness = float(np.mean(frame))
-                logger.info("Camera probe %d: %dx%d, brightness=%.1f",
-                            idx, frame.shape[1], frame.shape[0], brightness)
-                if brightness >= 5.0:
-                    logger.info("Camera probe: index %d has a real image", idx)
-                    return idx
-                else:
-                    logger.info("Camera probe: index %d is black (virtual camera?)", idx)
-            except Exception as e:
-                logger.debug("Camera probe %d failed: %s", idx, e)
-            finally:
-                cap.release()
+            for bname, backend in backends:
+                try:
+                    cap = cv2.VideoCapture(idx, backend)
+                    if not cap.isOpened():
+                        cap.release()
+                        continue
+                    ret, frame = cap.read()
+                    cap.release()
+                    if not ret or frame is None:
+                        continue
+                    brightness = float(np.mean(frame))
+                    logger.info("Camera probe %d [%s]: %dx%d, brightness=%.1f",
+                                idx, bname, frame.shape[1], frame.shape[0], brightness)
+                    if brightness >= 5.0:
+                        logger.info("Camera probe: index %d [%s] has a real image", idx, bname)
+                        return idx
+                except Exception as e:
+                    logger.debug("Camera probe %d [%s] failed: %s", idx, bname, e)
 
         logger.warning("Camera probe: no non-black camera found, defaulting to 0")
         return 0

@@ -1284,27 +1284,25 @@ class CameraSettingsDialog(QDialog):
             frame = None
             cap = None
             for backend in backends:
-                cap = cv2.VideoCapture(i, backend)
-                if cap.isOpened():
-                    ret, f = cap.read()
+                test_cap = cv2.VideoCapture(i, backend)
+                if test_cap.isOpened():
+                    ret, f = test_cap.read()
                     if ret and f is not None:
-                        frame = f
-                        break
-                    cap.release()
-                    cap = None
+                        brightness = float(np.mean(f))
+                        if brightness >= 5.0:
+                            # Non-black frame — this backend works
+                            frame = f
+                            cap = test_cap
+                            break
+                        else:
+                            logger.info("USB scan: index %d backend %s produces black frames, trying next", i, backend)
+                            test_cap.release()
+                    else:
+                        test_cap.release()
                 else:
-                    cap.release()
-                    cap = None
+                    test_cap.release()
 
             if frame is None:
-                continue
-
-            # Skip virtual cameras that produce black/blank frames
-            brightness = float(np.mean(frame))
-            if brightness < 5.0:
-                logger.info("USB scan: skipping index %d (brightness=%.1f, likely virtual camera)", i, brightness)
-                if cap:
-                    cap.release()
                 continue
 
             # Dedup by grayscale comparison
