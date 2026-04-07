@@ -1093,13 +1093,46 @@ class _UsbCameraScanThread(QThread):
             self.scan_failed.emit(str(e))
 
 
+class _CameraPreviewThread(QThread):
+    """Lightweight live preview thread for a single USB camera."""
+
+    frame_ready = pyqtSignal(np.ndarray)
+
+    def __init__(self, camera_id: int, backend_name: str, parent=None):
+        super().__init__(parent)
+        self.camera_id = camera_id
+        self.backend_name = backend_name
+        self.running = False
+
+    def run(self):
+        _mask_fp_exceptions()
+        backends_map = {"DSHOW": cv2.CAP_DSHOW, "MSMF": cv2.CAP_MSMF, "ANY": cv2.CAP_ANY}
+        backend = backends_map.get(self.backend_name, cv2.CAP_ANY)
+        _mask_fp_exceptions()
+        cap = cv2.VideoCapture(self.camera_id, backend)
+        if not cap.isOpened():
+            return
+        self.running = True
+        try:
+            while self.running:
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    self.frame_ready.emit(frame)
+                self.msleep(33)  # ~30 fps
+        finally:
+            cap.release()
+
+    def stop(self):
+        self.running = False
+
+
 class _UsbCameraSelectionDialog(QDialog):
-    """Scan-time USB camera selector with checkbox-based multi-select."""
+    """Scan-time USB camera selector with live preview."""
 
     def __init__(self, cameras: List[Dict[str, Any]], selected_ids: set, max_selected: int, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Choose USB Cameras")
-        self.setMinimumSize(620, 500)
+        self.setMinimumSize(620, 520)
         self.setStyleSheet("""
             QDialog { background-color: #1c1c1c; }
             QLabel { color: #d4d4d4; }
@@ -1122,13 +1155,13 @@ class _UsbCameraSelectionDialog(QDialog):
         self._max_selected = max_selected
         self.selected_camera_ids: List[int] = []
         self._mutating_items = False
+        self._preview_thread: Optional[_CameraPreviewThread] = None
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
 
         hint = QLabel(
-            "Choose up to 2 total cameras. Black feeds are skipped only for this scan, "
-            "so a covered or dark camera is not locked out permanently."
+            "Choose up to 2 total cameras. Click a camera to see a live preview."
         )
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #9a9a9a; font-size: 12px;")
@@ -1139,15 +1172,15 @@ class _UsbCameraSelectionDialog(QDialog):
         layout.addWidget(self._selection_label)
 
         self._cam_list = QListWidget()
-        self._cam_list.currentRowChanged.connect(self._update_preview)
+        self._cam_list.currentRowChanged.connect(self._on_camera_selected)
         self._cam_list.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self._cam_list, stretch=1)
 
-        self._preview_label = QLabel()
-        self._preview_label.setFixedHeight(220)
+        self._preview_label = QLabel("Select a camera to see live preview")
+        self._preview_label.setFixedHeight(240)
         self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._preview_label.setStyleSheet(
-            "background-color: #0a0a0a; border: 1px solid #3a3a3a; border-radius: 6px;"
+            "background-color: #0a0a0a; border: 1px solid #3a3a3a; border-radius: 6px; color: #666;"
         )
         layout.addWidget(self._preview_label)
 
@@ -1171,7 +1204,7 @@ class _UsbCameraSelectionDialog(QDialog):
         for cam in self._cameras:
             descriptor = f"{cam['label']}  ({cam['resolution']}, {cam['backend']})"
             if cam["is_black"]:
-                descriptor += "  • black/covered in this scan"
+                descriptor += "  -- dark during scan"
 
             item = QListWidgetItem(descriptor)
             item.setData(Qt.ItemDataRole.UserRole, cam["id"])
@@ -1181,8 +1214,7 @@ class _UsbCameraSelectionDialog(QDialog):
             )
 
             if cam["is_black"] and cam["id"] not in self._selected_ids:
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
-                item.setForeground(QColor("#777777"))
+                item.setForeground(QColor("#999999"))
             self._cam_list.addItem(item)
 
         self._mutating_items = False
@@ -1224,7 +1256,14 @@ class _UsbCameraSelectionDialog(QDialog):
         self._selected_ids = set(checked)
         self._update_selection_label()
 
-    def _update_preview(self, row: int):
+    def _stop_preview(self):
+        if self._preview_thread is not None:
+            self._preview_thread.stop()
+            self._preview_thread.wait(3000)
+            self._preview_thread = None
+
+    def _on_camera_selected(self, row: int):
+        self._stop_preview()
         if row < 0 or row >= self._cam_list.count():
             return
         item = self._cam_list.item(row)
@@ -1233,22 +1272,35 @@ class _UsbCameraSelectionDialog(QDialog):
         if cam is None:
             return
 
-        self._preview_label.setPixmap(_frame_to_pixmap(cam.get("frame"), self._preview_label.size()))
-        status_bits = [
-            f"USB Camera {cam_id}",
-            f"Resolution: {cam['resolution']}",
-            f"Backend: {cam['backend']}",
-            f"Brightness: {cam['brightness']:.1f}",
-        ]
-        if cam["is_black"]:
-            status_bits.append("This feed looked black during this scan, so it is not offered as a new camera.")
-        else:
-            status_bits.append("Feed looked usable during this scan.")
-        self._status_label.setText(" | ".join(status_bits))
+        self._status_label.setText(
+            f"USB Camera {cam_id} | {cam['resolution']} | {cam['backend']} | Starting live preview..."
+        )
+        self._preview_label.setText("Connecting...")
+
+        self._preview_thread = _CameraPreviewThread(cam_id, cam["backend"])
+        self._preview_thread.frame_ready.connect(self._on_live_frame)
+        self._preview_thread.start()
+
+    def _on_live_frame(self, frame: np.ndarray):
+        self._preview_label.setPixmap(_frame_to_pixmap(frame, self._preview_label.size()))
+        # Update status on first frame
+        row = self._cam_list.currentRow()
+        if row >= 0 and row < len(self._cameras):
+            cam = self._cameras[row]
+            h, w = frame.shape[:2]
+            brightness = float(np.mean(frame))
+            self._status_label.setText(
+                f"USB Camera {cam['id']} | {w}x{h} | {cam['backend']} | Live (brightness: {brightness:.0f})"
+            )
 
     def _on_accept(self):
+        self._stop_preview()
         self.selected_camera_ids = self._checked_ids()
         self.accept()
+
+    def closeEvent(self, event):
+        self._stop_preview()
+        super().closeEvent(event)
 
 
 class _AudioDevicePickerDialog(QDialog):
@@ -1447,7 +1499,7 @@ class _BugReportSubmitThread(QThread):
     def run(self):
         try:
             req = urllib.request.Request(
-                "https://replayswing.com/api/bug-report",
+                "https://replayswing.com/api/bug-report/",
                 data=json.dumps(self._payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
                 method="POST",
