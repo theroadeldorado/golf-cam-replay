@@ -22,9 +22,22 @@ from PyQt6.QtCore import QThread, pyqtSignal
 # Tell FFMPEG to use TCP for RTSP (more reliable, less packet loss than UDP)
 os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
 
+import sys
 from config import AppConfig, CameraPreset
 
 logger = logging.getLogger(__name__)
+
+
+def _mask_fp_exceptions():
+    """Mask floating-point exceptions on Windows to prevent OpenCV DSHOW/MSMF
+    backends from crashing with 'int divide by zero' during VideoCapture."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            _MCW_EM = 0x0008001F
+            ctypes.cdll.msvcrt._controlfp(_MCW_EM, _MCW_EM)
+        except Exception:
+            pass
 
 
 # ============================================================================
@@ -355,7 +368,6 @@ class CameraCapture(QThread):
         On Windows: tries DirectShow, MSMF, then default.
         On macOS/Linux: skips Windows-only backends, uses default (AVFoundation/V4L2).
         """
-        import sys
         if sys.platform == "win32":
             backends = [("DSHOW", cv2.CAP_DSHOW), ("MSMF", cv2.CAP_MSMF), ("default", cv2.CAP_ANY)]
         else:
@@ -363,6 +375,7 @@ class CameraCapture(QThread):
 
         for backend_name, backend in backends:
             logger.debug("Camera %s: trying %s backend...", camera_id, backend_name)
+            _mask_fp_exceptions()
             cap = cv2.VideoCapture(camera_id, backend)
             accepted = False
             try:

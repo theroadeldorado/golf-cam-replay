@@ -71,6 +71,22 @@ from ui_components import (
 
 
 # ============================================================================
+# Windows FP Exception Guard
+# ============================================================================
+
+def _mask_fp_exceptions():
+    """Mask floating-point exceptions on Windows to prevent OpenCV DSHOW/MSMF
+    backends from crashing with 'int divide by zero' during VideoCapture."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            _MCW_EM = 0x0008001F  # all exception masks
+            ctypes.cdll.msvcrt._controlfp(_MCW_EM, _MCW_EM)
+        except Exception:
+            pass
+
+
+# ============================================================================
 # Logging Setup
 # ============================================================================
 
@@ -1032,6 +1048,7 @@ class _UsbCameraScanThread(QThread):
 
     def run(self):
         try:
+            _mask_fp_exceptions()
             if sys.platform == "win32":
                 backends = [("DSHOW", cv2.CAP_DSHOW), ("MSMF", cv2.CAP_MSMF), ("ANY", cv2.CAP_ANY)]
             else:
@@ -1042,6 +1059,7 @@ class _UsbCameraScanThread(QThread):
                 frame = None
                 backend_name = ""
                 for name, backend in backends:
+                    _mask_fp_exceptions()
                     cap = cv2.VideoCapture(idx, backend)
                     try:
                         if not cap.isOpened():
@@ -1234,12 +1252,12 @@ class _UsbCameraSelectionDialog(QDialog):
 
 
 class _AudioDevicePickerDialog(QDialog):
-    """Audio device chooser with live level meters."""
+    """Audio device chooser — select a mic, then preview it."""
 
     def __init__(self, devices: List[Dict[str, Any]], current_index, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Choose Microphone")
-        self.setMinimumSize(640, 520)
+        self.setMinimumSize(500, 420)
         self.setStyleSheet("""
             QDialog { background-color: #1c1c1c; }
             QLabel { color: #d4d4d4; }
@@ -1247,6 +1265,7 @@ class _AudioDevicePickerDialog(QDialog):
                 background-color: #141414; border: 1px solid #3a3a3a;
                 border-radius: 6px; color: #d4d4d4;
             }
+            QListWidget::item { padding: 6px 10px; }
             QListWidget::item:selected { background-color: #2d4d7d; }
             QProgressBar {
                 background-color: #252525; border: none; border-radius: 4px;
@@ -1262,28 +1281,53 @@ class _AudioDevicePickerDialog(QDialog):
 
         self._devices = devices
         self.selected_device_index = current_index
-        self._row_widgets: Dict[Any, Dict[str, QWidget]] = {}
         self._preview_thread: Optional[MicPreview] = None
-        self._preview_device_index = None
-        self._probe_pos = 0
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
 
         hint = QLabel(
-            "Talk near the microphone while this window is open. ReplaySwing cycles through "
-            "the available inputs and marks each device as Ready when Windows lets the app open it."
+            "Select a microphone from the list, then click Preview to test it. "
+            "Talk near the mic to see the level bar respond."
         )
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #9a9a9a; font-size: 12px;")
         layout.addWidget(hint)
 
-        self._scan_label = QLabel("Listening for active microphones…")
-        self._scan_label.setStyleSheet("color: #7fb6ff; font-size: 12px;")
-        layout.addWidget(self._scan_label)
-
         self._device_list = QListWidget()
+        self._device_list.currentRowChanged.connect(self._on_selection_changed)
         layout.addWidget(self._device_list, stretch=1)
+
+        # Preview section — shown below the list for the selected mic
+        preview_frame = QFrame()
+        preview_frame.setStyleSheet("QFrame { background-color: #1a1a1a; border: 1px solid #333; border-radius: 6px; }")
+        preview_layout = QVBoxLayout(preview_frame)
+        preview_layout.setContentsMargins(12, 10, 12, 10)
+        preview_layout.setSpacing(6)
+
+        self._preview_name = QLabel("No microphone selected")
+        self._preview_name.setStyleSheet("color: #f0f0f0; font-weight: bold; border: none;")
+        preview_layout.addWidget(self._preview_name)
+
+        bar_row = QHBoxLayout()
+        self._preview_bar = QProgressBar()
+        self._preview_bar.setMaximum(100)
+        self._preview_bar.setTextVisible(False)
+        self._preview_bar.setFixedHeight(14)
+        bar_row.addWidget(self._preview_bar, stretch=1)
+
+        self._preview_status = QLabel("")
+        self._preview_status.setStyleSheet("color: #8a8a8a; font-size: 11px; border: none;")
+        self._preview_status.setFixedWidth(80)
+        bar_row.addWidget(self._preview_status)
+        preview_layout.addLayout(bar_row)
+
+        self._preview_btn = QPushButton("Preview")
+        self._preview_btn.setFixedWidth(100)
+        self._preview_btn.clicked.connect(self._toggle_preview)
+        preview_layout.addWidget(self._preview_btn, alignment=Qt.AlignmentFlag.AlignRight)
+
+        layout.addWidget(preview_frame)
 
         btn_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -1293,54 +1337,24 @@ class _AudioDevicePickerDialog(QDialog):
         layout.addWidget(btn_box)
 
         self._decay_timer = QTimer(self)
-        self._decay_timer.timeout.connect(self._decay_levels)
+        self._decay_timer.timeout.connect(self._decay_level)
         self._decay_timer.start(100)
 
         self._populate_items()
-        QTimer.singleShot(0, self._start_next_probe)
 
     def _populate_items(self):
         selected_row = 0
         for row, dev in enumerate(self._devices):
-            item = QListWidgetItem()
-            item.setData(Qt.ItemDataRole.UserRole, dev["index"])
-
-            widget = QWidget()
-            widget_layout = QVBoxLayout(widget)
-            widget_layout.setContentsMargins(10, 8, 10, 8)
-            widget_layout.setSpacing(4)
-
             name = dev["name"]
             if dev.get("is_virtual"):
                 name += " (phone mic)"
+            meta = f"  —  {dev.get('channels', 1)} ch, {dev.get('sample_rate', 44100)} Hz"
+            if dev.get("index") is None:
+                meta += ", system default"
 
-            title = QLabel(name)
-            title.setStyleSheet("color: #f0f0f0; font-weight: bold;")
-            widget_layout.addWidget(title)
-
-            meta = QLabel(
-                f"{dev.get('channels', 1)} ch • {dev.get('sample_rate', 44100)} Hz"
-                + (" • Windows default" if dev.get("index") is None else "")
-            )
-            meta.setStyleSheet("color: #8a8a8a; font-size: 11px;")
-            widget_layout.addWidget(meta)
-
-            bar_row = QHBoxLayout()
-            bar = QProgressBar()
-            bar.setMaximum(100)
-            bar.setTextVisible(False)
-            bar.setValue(0)
-            bar_row.addWidget(bar, stretch=1)
-
-            status = QLabel("Waiting")
-            status.setStyleSheet("color: #8a8a8a; font-size: 11px;")
-            bar_row.addWidget(status)
-            widget_layout.addLayout(bar_row)
-
-            item.setSizeHint(widget.sizeHint())
+            item = QListWidgetItem(name + meta)
+            item.setData(Qt.ItemDataRole.UserRole, dev["index"])
             self._device_list.addItem(item)
-            self._device_list.setItemWidget(item, widget)
-            self._row_widgets[dev["index"]] = {"bar": bar, "status": status}
 
             if dev["index"] == self.selected_device_index:
                 selected_row = row
@@ -1348,53 +1362,67 @@ class _AudioDevicePickerDialog(QDialog):
         if self._device_list.count() > 0:
             self._device_list.setCurrentRow(selected_row)
 
-    def _start_next_probe(self):
-        if not self._devices or self._preview_thread is not None:
+    def _on_selection_changed(self, row: int):
+        self._stop_preview()
+        if row < 0 or row >= len(self._devices):
+            self._preview_name.setText("No microphone selected")
             return
+        dev = self._devices[row]
+        name = dev["name"]
+        if dev.get("is_virtual"):
+            name += " (phone mic)"
+        self._preview_name.setText(name)
+        self._preview_status.setText("")
+        self._preview_bar.setValue(0)
 
-        dev = self._devices[self._probe_pos % len(self._devices)]
-        self._probe_pos += 1
-        self._preview_device_index = dev["index"]
+    def _toggle_preview(self):
+        if self._preview_thread is not None and self._preview_thread.isRunning():
+            self._stop_preview()
+        else:
+            self._start_preview()
 
-        row = self._row_widgets.get(dev["index"])
-        if row:
-            row["status"].setText("Listening…")
+    def _start_preview(self):
+        row = self._device_list.currentRow()
+        if row < 0 or row >= len(self._devices):
+            return
+        dev = self._devices[row]
 
         self._preview_thread = MicPreview(
             device_index=dev["index"],
             sample_rate=dev.get("sample_rate", 44100),
-            duration=0.45,
+            duration=0,
         )
-        self._preview_thread.stream_state.connect(self._on_probe_state)
-        self._preview_thread.level_update.connect(self._on_probe_level)
-        self._preview_thread.finished_preview.connect(self._on_probe_finished)
+        self._preview_thread.stream_state.connect(self._on_stream_state)
+        self._preview_thread.level_update.connect(self._on_level)
+        self._preview_thread.finished_preview.connect(self._on_preview_finished)
+        self._preview_btn.setText("Stop")
         self._preview_thread.start()
 
-    def _on_probe_state(self, opened: bool):
-        row = self._row_widgets.get(self._preview_device_index)
-        if not row:
-            return
-        row["status"].setText("Ready" if opened else "Unavailable")
-        row["status"].setStyleSheet(
-            "color: #34d17e; font-size: 11px;" if opened else "color: #e84c3c; font-size: 11px;"
-        )
-
-    def _on_probe_level(self, level: float):
-        row = self._row_widgets.get(self._preview_device_index)
-        if not row:
-            return
-        bar = row["bar"]
-        bar.setValue(max(bar.value(), int(level * 100)))
-
-    def _on_probe_finished(self):
+    def _stop_preview(self):
+        if self._preview_thread is not None and self._preview_thread.isRunning():
+            self._preview_thread.stop()
+            self._preview_thread.wait(2000)
         self._preview_thread = None
-        self._preview_device_index = None
-        QTimer.singleShot(80, self._start_next_probe)
+        self._preview_btn.setText("Preview")
+        self._preview_bar.setValue(0)
 
-    def _decay_levels(self):
-        for row in self._row_widgets.values():
-            bar = row["bar"]
-            bar.setValue(max(0, bar.value() - 6))
+    def _on_stream_state(self, opened: bool):
+        if opened:
+            self._preview_status.setText("Ready")
+            self._preview_status.setStyleSheet("color: #34d17e; font-size: 11px; border: none;")
+        else:
+            self._preview_status.setText("Unavailable")
+            self._preview_status.setStyleSheet("color: #e84c3c; font-size: 11px; border: none;")
+
+    def _on_level(self, level: float):
+        self._preview_bar.setValue(max(self._preview_bar.value(), int(level * 100)))
+
+    def _on_preview_finished(self):
+        self._preview_thread = None
+        self._preview_btn.setText("Preview")
+
+    def _decay_level(self):
+        self._preview_bar.setValue(max(0, self._preview_bar.value() - 6))
 
     def _on_accept(self):
         item = self._device_list.currentItem()
@@ -1403,9 +1431,7 @@ class _AudioDevicePickerDialog(QDialog):
 
     def closeEvent(self, event):
         self._decay_timer.stop()
-        if self._preview_thread is not None and self._preview_thread.isRunning():
-            self._preview_thread.stop()
-            self._preview_thread.wait(2000)
+        self._stop_preview()
         super().closeEvent(event)
 
 
@@ -2334,28 +2360,31 @@ class MainWindow(QMainWindow):
         self.audio_device_summary.setStyleSheet("color: #d4d4d4;")
         self.audio_device_summary.setWordWrap(True)
         audio_dev_row.addWidget(self.audio_device_summary, stretch=1)
+        audio_group_layout.addLayout(audio_dev_row)
 
+        audio_btn_row = QHBoxLayout()
         self.choose_audio_btn = QPushButton("Choose…")
         self.choose_audio_btn.setToolTip("Open a microphone picker with live level meters")
         self.choose_audio_btn.clicked.connect(self._show_audio_picker)
-        audio_dev_row.addWidget(self.choose_audio_btn)
+        audio_btn_row.addWidget(self.choose_audio_btn)
 
         refresh_audio_btn = QPushButton("Refresh")
         refresh_audio_btn.setToolTip("Rescan audio devices and update the picker list")
         refresh_audio_btn.setFixedWidth(70)
         refresh_audio_btn.clicked.connect(self._refresh_audio_devices)
-        audio_dev_row.addWidget(refresh_audio_btn)
+        audio_btn_row.addWidget(refresh_audio_btn)
 
         self.test_mic_btn = QPushButton("Preview")
         self.test_mic_btn.setToolTip("Start or stop a live preview of the selected microphone")
         self.test_mic_btn.setFixedWidth(70)
         self.test_mic_btn.clicked.connect(self._test_mic)
-        audio_dev_row.addWidget(self.test_mic_btn)
+        audio_btn_row.addWidget(self.test_mic_btn)
 
-        audio_group_layout.addLayout(audio_dev_row)
+        audio_btn_row.addStretch()
+        audio_group_layout.addLayout(audio_btn_row)
 
         self.audio_device_help = QLabel(
-            "Open the picker and say “test” near the mic you want. ReplaySwing marks devices as Ready when it can open them."
+            "Choose a mic from the picker and click Preview to test it."
         )
         self.audio_device_help.setWordWrap(True)
         self.audio_device_help.setStyleSheet("color: #8a8a8a; font-size: 11px;")
