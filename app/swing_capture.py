@@ -1497,10 +1497,12 @@ class _BugReportSubmitThread(QThread):
         self._payload = payload
 
     def run(self):
+        url = "https://www.replayswing.com/api/bug-report"
         try:
+            payload = json.dumps(self._payload).encode("utf-8")
             req = urllib.request.Request(
-                "https://replayswing.com/api/bug-report/",
-                data=json.dumps(self._payload).encode("utf-8"),
+                url,
+                data=payload,
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
@@ -1512,12 +1514,15 @@ class _BugReportSubmitThread(QThread):
                 self.finished_submission.emit(False, body.get("error", "Bug report failed."))
         except urllib.error.HTTPError as e:
             try:
-                body = json.loads(e.read().decode("utf-8"))
+                raw = e.read().decode("utf-8")
+                body = json.loads(raw)
                 message = body.get("error", f"HTTP {e.code}")
             except Exception:
                 message = f"HTTP {e.code}"
+            logger.error("Bug report failed: %s (url=%s)", message, url)
             self.finished_submission.emit(False, message)
         except Exception as e:
+            logger.error("Bug report failed: %s (url=%s)", e, url)
             self.finished_submission.emit(False, str(e))
 
 

@@ -387,7 +387,26 @@ class AudioDetector(QThread):
             if dev_idx is not None:
                 kwargs["input_device_index"] = dev_idx
 
-            stream = p.open(**kwargs)
+            try:
+                stream = p.open(**kwargs)
+            except Exception:
+                # Retry with the device's native sample rate
+                try:
+                    probe_idx = dev_idx if dev_idx is not None else p.get_default_input_device_info()["index"]
+                    native_rate = int(p.get_device_info_by_index(probe_idx)["defaultSampleRate"])
+                    if native_rate != self.config.audio_sample_rate:
+                        logger.info("AudioDetector: retrying with native sample rate %d", native_rate)
+                        kwargs["rate"] = native_rate
+                        kwargs["frames_per_buffer"] = int(native_rate * self.config.audio_chunk_size / self.config.audio_sample_rate)
+                        stream = p.open(**kwargs)
+                        # Update extractor to match the actual sample rate
+                        self.extractor = AudioFeatureExtractor(native_rate)
+                    else:
+                        raise
+                except Exception as e:
+                    logger.error("Audio error: %s", e)
+                    p.terminate()
+                    return
         except Exception as e:
             logger.error("Audio error: %s", e)
             p.terminate()
