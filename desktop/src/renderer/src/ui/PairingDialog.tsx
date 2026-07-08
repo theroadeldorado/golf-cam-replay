@@ -22,26 +22,10 @@ export function PairingDialog({
   onCancel: () => void
 }): React.JSX.Element {
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.75)',
-        display: 'grid',
-        placeItems: 'center'
-      }}
-    >
-      <div
-        style={{
-          background: '#161a17',
-          borderRadius: 12,
-          padding: 28,
-          maxWidth: 420,
-          textAlign: 'center'
-        }}
-      >
-        <h2 style={{ fontSize: 16, marginBottom: 4 }}>Add your phone as a camera</h2>
-        <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 16 }}>
+    <div className="scrim">
+      <div className="dialog" style={{ textAlign: 'center' }}>
+        <h2>Add your phone as a camera</h2>
+        <p className="hint" style={{ marginBottom: 14 }}>
           Keep the phone on the same Wi-Fi as this PC.
         </p>
         <img
@@ -51,7 +35,8 @@ export function PairingDialog({
         />
         <p
           data-testid="pairing-url"
-          style={{ fontSize: 11, color: 'var(--muted)', margin: '12px 0', wordBreak: 'break-all' }}
+          className="hint"
+          style={{ margin: '12px 0', wordBreak: 'break-all', fontFamily: 'var(--font-mono)', fontSize: 11 }}
         >
           {pairing.url}
         </p>

@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ClipMeta, SessionInfo } from '@shared/types'
 import { golfDir } from './paths'
@@ -43,4 +43,35 @@ export function readClips(sessionId: string): ClipMeta[] {
   } catch {
     return []
   }
+}
+
+function writeClips(sessionId: string, clips: ClipMeta[]): void {
+  const clipsFile = join(golfDir(), sessionId, 'clips.json')
+  const tempFile = `${clipsFile}.tmp`
+  writeFileSync(tempFile, JSON.stringify(clips, null, 2), 'utf-8')
+  renameSync(tempFile, clipsFile)
+}
+
+export function pinClip(sessionId: string, index: number, pinned: boolean): ClipMeta[] {
+  const clips = readClips(sessionId)
+  if (clips[index]) {
+    clips[index].pinned = pinned
+    writeClips(sessionId, clips)
+  }
+  return clips
+}
+
+/** Delete a clip's files and metadata entry — mirrors v1's delete_clip. */
+export function deleteClip(sessionId: string, index: number): ClipMeta[] {
+  const clips = readClips(sessionId)
+  const clip = clips[index]
+  if (!clip) return clips
+  const folder = join(golfDir(), sessionId)
+  for (const fileName of Object.values(clip.camera_files ?? { primary: clip.file })) {
+    rmSync(join(folder, fileName), { force: true })
+  }
+  if (clip.thumbnail) rmSync(join(folder, clip.thumbnail), { force: true })
+  clips.splice(index, 1)
+  writeClips(sessionId, clips)
+  return clips
 }

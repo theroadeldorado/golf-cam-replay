@@ -1,38 +1,53 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ClipMeta, Settings } from '@shared/types'
+import type { ClipMeta, SessionInfo, Settings } from '@shared/types'
 import { CaptureController, type ActiveCamera } from '../capture/capture-controller'
 import { listUsbCameras, onDeviceChange, type UsbCameraInfo } from '../cameras/usb'
-import type { VisionSampleEvent } from '../trigger/vision-trigger'
 import { PhoneCameraSource } from '../cameras/phone-source'
+import type { VisionSampleEvent } from '../trigger/vision-trigger'
+import { ProgramBus } from '../playback/program-bus'
 import { PairingDialog, type PairingInfo } from '../ui/PairingDialog'
+import { Rail, clipUrl } from '../ui/Rail'
+import { SettingsSheet } from '../ui/SettingsSheet'
 import QRCode from 'qrcode'
 
-function CameraTile({ camera }: { camera: ActiveCamera }): React.JSX.Element {
-  const videoRef = useRef<HTMLVideoElement>(null)
+type TallyState = 'off' | 'watching' | 'address' | 'capturing'
 
+const STATE_WORD: Record<TallyState, string> = {
+  off: 'Standby',
+  watching: 'Watching',
+  address: 'Set',
+  capturing: 'Capture'
+}
+
+interface ReplayInfo {
+  url: string
+  label: string
+  /** Object URLs need revoking; clip:// URLs don't. */
+  objectUrl: boolean
+}
+
+function CameraTile({
+  camera,
+  onRemove
+}: {
+  camera: ActiveCamera
+  onRemove: () => void
+}): React.JSX.Element {
+  const videoRef = useRef<HTMLVideoElement>(null)
   useEffect(() => {
-    if (videoRef.current && camera.stream) {
-      videoRef.current.srcObject = camera.stream
-    }
+    if (videoRef.current && camera.stream) videoRef.current.srcObject = camera.stream
   }, [camera.stream])
 
   return (
-    <div style={{ position: 'relative', background: '#000', borderRadius: 8, overflow: 'hidden' }}>
-      <video ref={videoRef} autoPlay muted playsInline style={{ width: '100%', display: 'block' }} />
-      <div
-        style={{
-          position: 'absolute',
-          left: 8,
-          bottom: 8,
-          fontSize: 12,
-          background: 'rgba(0,0,0,0.6)',
-          padding: '2px 8px',
-          borderRadius: 4
-        }}
-      >
+    <div className="camera-tile">
+      <video ref={videoRef} autoPlay muted playsInline />
+      <span className="tag">
         {camera.label} · {camera.state === 'live' ? `${camera.measuredFps} fps` : camera.state}
         {camera.error ? ` — ${camera.error}` : ''}
-      </div>
+      </span>
+      <button className="remove" title="Remove camera" onClick={onRemove}>
+        ✕
+      </button>
     </div>
   )
 }
@@ -42,15 +57,28 @@ export function App(): React.JSX.Element {
   const [cameras, setCameras] = useState<ActiveCamera[]>([])
   const [available, setAvailable] = useState<UsbCameraInfo[]>([])
   const [showPicker, setShowPicker] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [capturing, setCapturing] = useState(false)
   const [armed, setArmed] = useState(false)
   const [vision, setVision] = useState<VisionSampleEvent | null>(null)
-  const [replay, setReplay] = useState<{ url: string; meta: ClipMeta } | null>(null)
+  const [replay, setReplay] = useState<ReplayInfo | null>(null)
   const [pairing, setPairing] = useState<PairingInfo | null>(null)
+  const [sessions, setSessions] = useState<SessionInfo[]>([])
+  const [selectedSession, setSelectedSession] = useState<string | null>(null)
+  const [clips, setClips] = useState<ClipMeta[]>([])
   const controllerRef = useRef<CaptureController | null>(null)
+  const busRef = useRef<ProgramBus | null>(null)
   const phoneSourcesRef = useRef(new Map<string, PhoneCameraSource>())
 
-  // Boot: load settings, build the controller, reopen saved cameras.
+  const refreshGallery = useCallback(async (preferSession?: string) => {
+    const list = await window.api.invoke('session:list')
+    setSessions(list)
+    const target = preferSession ?? (await window.api.invoke('session:current')) ?? list[0]?.id ?? null
+    setSelectedSession(target)
+    setClips(target ? await window.api.invoke('session:clips', target) : [])
+  }, [])
+
+  // Boot: settings → controller + program bus → reopen saved cameras → gallery.
   useEffect(() => {
     let disposed = false
     void (async () => {
@@ -58,34 +86,48 @@ export function App(): React.JSX.Element {
       if (disposed) return
       setSettings(loaded)
 
+      const bus = new ProgramBus()
+      busRef.current = bus
+      window.api.on('pip:visibility', (visible) => {
+        if (visible) void bus.start()
+        else bus.stop()
+      })
+
       const controller = new CaptureController(loaded)
       controllerRef.current = controller
-      controller.on('camerasChanged', setCameras)
+      controller.on('camerasChanged', (list) => {
+        setCameras(list)
+        bus.setCameras(list)
+      })
       controller.on('captureStateChanged', setCapturing)
       controller.on('visionEvent', setVision)
       controller.on('clipSaved', (meta, primaryMp4) => {
         const url = URL.createObjectURL(new Blob([primaryMp4], { type: 'video/mp4' }))
         setReplay((previous) => {
-          if (previous) URL.revokeObjectURL(previous.url)
-          return { url, meta }
+          if (previous?.objectUrl) URL.revokeObjectURL(previous.url)
+          return { url, label: `Saved ${meta.file}`, objectUrl: true }
         })
+        bus.setReplayUrl(url)
+        void refreshGallery()
       })
 
       for (const camera of loaded.cameras) {
-        if (camera.kind === 'usb') {
-          void controller.addUsbCamera(camera.id, camera.label)
-        }
+        if (camera.kind === 'usb') void controller.addUsbCamera(camera.id, camera.label)
       }
+      void refreshGallery()
     })()
     return () => {
       disposed = true
       controllerRef.current?.dispose()
+      busRef.current?.stop()
     }
-  }, [])
+  }, [refreshGallery])
 
   const refreshAvailable = useCallback(async () => {
     const found = await listUsbCameras()
-    setAvailable(found.filter((info) => !controllerRef.current?.getCameras().some((c) => c.id === info.deviceId)))
+    setAvailable(
+      found.filter((info) => !controllerRef.current?.getCameras().some((c) => c.id === info.deviceId))
+    )
   }, [])
 
   useEffect(() => onDeviceChange(() => void refreshAvailable()), [refreshAvailable])
@@ -116,10 +158,7 @@ export function App(): React.JSX.Element {
     const source = new PhoneCameraSource(webBaseUrl, {
       onState: (state) => {
         setPairing((current) => (current ? { ...current, state } : current))
-        if (state === 'connected') {
-          // Small grace so the user sees "Connected!" before the dialog closes.
-          setTimeout(() => setPairing(null), 600)
-        }
+        if (state === 'connected') setTimeout(() => setPairing(null), 600)
       },
       onStream: (stream) => {
         controllerRef.current?.attachExternalStream(source.sessionId, 'Phone', stream)
@@ -132,7 +171,6 @@ export function App(): React.JSX.Element {
   }, [])
 
   const cancelPairing = useCallback(() => {
-    // Stop only sources that never delivered a stream.
     for (const [id, source] of phoneSourcesRef.current) {
       if (!controllerRef.current?.getCameras().some((camera) => camera.id === id)) {
         source.stop()
@@ -160,6 +198,12 @@ export function App(): React.JSX.Element {
     [settings]
   )
 
+  const applySettings = useCallback(async (patch: Partial<Settings>) => {
+    const updated = await window.api.invoke('settings:set', patch)
+    setSettings(updated)
+    controllerRef.current?.updateSettings(updated)
+  }, [])
+
   const recordNow = useCallback(() => {
     controllerRef.current?.triggerNow('manual')
   }, [])
@@ -173,111 +217,169 @@ export function App(): React.JSX.Element {
     })
   }, [])
 
-  // Keyboard: A = arm/disarm, T = manual trigger (v1 muscle memory), Esc = dismiss replay.
+  const dismissReplay = useCallback(() => {
+    setReplay((previous) => {
+      if (previous?.objectUrl) URL.revokeObjectURL(previous.url)
+      return null
+    })
+    busRef.current?.setReplayUrl(null)
+  }, [])
+
+  const playClip = useCallback(
+    (clip: ClipMeta) => {
+      if (!selectedSession) return
+      const url = clipUrl(selectedSession, clip.file)
+      setReplay((previous) => {
+        if (previous?.objectUrl) URL.revokeObjectURL(previous.url)
+        return { url, label: clip.file, objectUrl: false }
+      })
+      busRef.current?.setReplayUrl(url)
+    },
+    [selectedSession]
+  )
+
+  // Keyboard: A = arm, T = manual trigger, P = PiP, Esc = back to live.
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return
       if (event.key === 't' || event.key === 'T') recordNow()
       if (event.key === 'a' || event.key === 'A') toggleArmed()
-      if (event.key === 'Escape') setReplay(null)
+      if (event.key === 'p' || event.key === 'P') void window.api.invoke('pip:toggle')
+      if (event.key === 'Escape') dismissReplay()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [recordNow, toggleArmed])
+  }, [recordNow, toggleArmed, dismissReplay])
 
+  const tally: TallyState = capturing
+    ? 'capturing'
+    : armed
+      ? vision?.state === 'address'
+        ? 'address'
+        : 'watching'
+      : 'off'
+
+  const anyLive = cameras.some((camera) => camera.state === 'live')
   const gridColumns = cameras.length <= 1 ? 1 : 2
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: 16, gap: 12 }}>
-      <header style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <h1 style={{ fontSize: 18 }}>ReplaySwing</h1>
-        {armed && vision && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--muted)' }}>
-            <span data-testid="vision-state">{vision.state}</span>
-            <div style={{ width: 120, height: 8, background: '#22271f', borderRadius: 4, overflow: 'hidden' }}>
-              <div
-                style={{
-                  width: `${Math.min(100, (vision.energy / Math.max(vision.spikeThreshold, 0.01)) * 100)}%`,
-                  height: '100%',
-                  background: vision.state === 'address' ? '#12a15c' : '#5a6b5f',
-                  transition: 'width 80ms linear'
-                }}
-              />
-            </div>
-          </div>
-        )}
+    <>
+      <div className="tally" data-state={tally === 'off' ? undefined : tally} />
+
+      <header className="topbar">
+        <span className="brand">
+          Replay<em>Swing</em>
+        </span>
         <div style={{ flex: 1 }} />
         <button onClick={() => void openPicker()}>Add camera</button>
         <button onClick={() => void addPhone()}>Add phone</button>
-        <button
-          onClick={toggleArmed}
-          disabled={cameras.every((camera) => camera.state !== 'live')}
-          style={{
-            background: armed ? '#c2410c' : '#1d4ed8',
-            color: '#fff',
-            padding: '8px 20px',
-            borderRadius: 6,
-            border: 'none'
-          }}
-        >
-          {armed ? 'Disarm (A)' : 'Arm (A)'}
+        <button onClick={() => void window.api.invoke('pip:toggle')} title="Overlay window (P)">
+          PiP
         </button>
-        <button
-          onClick={recordNow}
-          disabled={capturing || cameras.every((camera) => camera.state !== 'live')}
-          style={{ background: capturing ? '#666' : '#12a15c', color: '#fff', padding: '8px 20px', borderRadius: 6, border: 'none' }}
-        >
-          {capturing ? 'Recording…' : 'Record now (T)'}
+        <button onClick={() => setShowSettings(true)} title="Settings">
+          ⚙
         </button>
       </header>
 
-      {cameras.length === 0 ? (
-        <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: 'var(--muted)' }}>
-          <p>No cameras yet — click “Add camera” to get started.</p>
-        </div>
-      ) : (
-        <div
-          style={{
-            flex: 1,
-            display: 'grid',
-            gridTemplateColumns: `repeat(${gridColumns}, 1fr)`,
-            gap: 12,
-            alignContent: 'start'
-          }}
-        >
-          {cameras.map((camera) => (
-            <div key={camera.id} style={{ position: 'relative' }}>
-              <CameraTile camera={camera} />
-              <button
-                onClick={() => void removeCamera(camera.id)}
-                title="Remove camera"
-                style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-              >
-                ✕
-              </button>
+      <div className="main">
+        <div className="stage">
+          {replay ? (
+            <div className="replay-stage">
+              <video src={replay.url} autoPlay loop muted playsInline />
+              <div className="replay-caption">
+                <strong>{replay.label}</strong>
+                <span>looping — Esc or Back to live</span>
+                <div style={{ flex: 1 }} />
+                <button onClick={dismissReplay}>Back to live</button>
+              </div>
             </div>
-          ))}
+          ) : cameras.length === 0 ? (
+            <div className="empty-stage">
+              <p>
+                No cameras yet.
+                <br />
+                Add a USB camera or scan a QR with your phone.
+              </p>
+            </div>
+          ) : (
+            <div className="camera-grid" style={{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)` }}>
+              {cameras.map((camera) => (
+                <CameraTile key={camera.id} camera={camera} onRemove={() => void removeCamera(camera.id)} />
+              ))}
+            </div>
+          )}
         </div>
-      )}
+
+        <Rail
+          sessions={sessions}
+          selectedSession={selectedSession}
+          clips={clips}
+          onSelectSession={(id) => {
+            setSelectedSession(id)
+            void window.api.invoke('session:clips', id).then(setClips)
+          }}
+          onPlay={playClip}
+          onPin={(index, pinned) => {
+            if (selectedSession) {
+              void window.api.invoke('clip:pin', selectedSession, index, pinned).then(setClips)
+            }
+          }}
+          onDelete={(index) => {
+            if (selectedSession) {
+              void window.api.invoke('clip:delete', selectedSession, index).then(setClips)
+            }
+          }}
+        />
+      </div>
+
+      <div className="console">
+        <button className="arm-btn" data-armed={armed} onClick={toggleArmed} disabled={!anyLive}>
+          {armed ? 'Disarm (A)' : 'Arm (A)'}
+        </button>
+        <div className="state-word" data-state={tally}>
+          {STATE_WORD[tally]}
+        </div>
+        {armed && vision && (
+          <>
+            <div className="meter">
+              <div
+                style={{
+                  width: `${Math.min(100, (vision.energy / Math.max(vision.spikeThreshold, 0.01)) * 100)}%`,
+                  background: vision.state === 'address' ? 'var(--lock)' : 'var(--watch)'
+                }}
+              />
+            </div>
+            <span
+              data-testid="vision-state"
+              style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--muted)' }}
+            >
+              {vision.state}
+            </span>
+          </>
+        )}
+        <button className="record-btn" onClick={recordNow} disabled={capturing || !anyLive}>
+          {capturing ? 'Recording…' : 'Record now (T)'}
+        </button>
+        <div className="shot-counter">
+          <strong>{clips.length}</strong> shots
+          <br />
+          this session
+        </div>
+      </div>
 
       {showPicker && (
-        <div
-          onClick={() => setShowPicker(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'grid', placeItems: 'center' }}
-        >
-          <div
-            onClick={(event) => event.stopPropagation()}
-            style={{ background: '#161a17', borderRadius: 12, padding: 24, minWidth: 360 }}
-          >
-            <h2 style={{ fontSize: 16, marginBottom: 12 }}>Add a camera</h2>
+        <div className="scrim" onClick={() => setShowPicker(false)}>
+          <div className="dialog" onClick={(event) => event.stopPropagation()}>
+            <h2>Add a camera</h2>
             {available.length === 0 ? (
-              <p style={{ color: 'var(--muted)' }}>No unused cameras found.</p>
+              <p className="hint">No unused cameras found. Plug one in and reopen this dialog.</p>
             ) : (
               available.map((info) => (
                 <button
                   key={info.deviceId}
                   data-testid="camera-option"
+                  className="option-btn"
                   onClick={() => void addCamera(info)}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', marginBottom: 6, background: '#22271f', color: 'inherit', border: 'none', borderRadius: 6, cursor: 'pointer' }}
                 >
                   {info.label}
                 </button>
@@ -289,19 +391,14 @@ export function App(): React.JSX.Element {
 
       {pairing && <PairingDialog pairing={pairing} onCancel={cancelPairing} />}
 
-      {replay && (
-        <div
-          onClick={() => setReplay(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'grid', placeItems: 'center' }}
-        >
-          <div style={{ textAlign: 'center' }}>
-            <video src={replay.url} autoPlay loop muted playsInline style={{ maxWidth: '80vw', maxHeight: '80vh', borderRadius: 8 }} />
-            <p style={{ color: 'var(--muted)', marginTop: 8 }}>
-              Saved {replay.meta.file} — click anywhere or press Esc to dismiss
-            </p>
-          </div>
-        </div>
+      {showSettings && settings && (
+        <SettingsSheet
+          settings={settings}
+          cameras={cameras}
+          onChange={(patch) => void applySettings(patch)}
+          onClose={() => setShowSettings(false)}
+        />
       )}
-    </div>
+    </>
   )
 }
