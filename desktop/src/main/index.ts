@@ -7,6 +7,8 @@ import { golfDir, settingsFilePath } from './paths'
 import { registerIpc } from './ipc'
 import { WindowRegistry } from './windows'
 import { runSpike, spikeNameFromArgv } from './spike'
+import { setupAutoUpdate } from './updater'
+import { setupCrashCapture } from './crash'
 
 // Advertise raw LAN IPs in WebRTC host candidates instead of mDNS .local
 // names, so a phone on the same network can always dial this machine even
@@ -63,6 +65,8 @@ if (!app.requestSingleInstanceLock()) {
 
     setupLogging()
     log.info(`ReplaySwing v${__APP_VERSION__} starting`)
+    setupCrashCapture()
+    setupAutoUpdate()
     registerClipProtocol()
 
     const store = new SettingsStore(settingsFilePath())
