@@ -61,6 +61,25 @@ export interface ClipMeta {
   v2?: ClipMetaV2
 }
 
+export interface SaveClipCamera {
+  cameraId: string
+  label: string
+  mp4: ArrayBuffer
+  firstFrameWallMs: number
+}
+
+/** Renderer → main payload carrying one triggered capture's muxed MP4s. */
+export interface SaveClipRequest {
+  cameras: SaveClipCamera[]
+  primaryCameraId: string
+  thumbnailJpeg: ArrayBuffer | null
+  triggerWallMs: number
+  trigger: { source: 'manual' | 'vision'; confidence?: number }
+  preRollMs: number
+  postRollMs: number
+  fps: number
+}
+
 export interface SessionInfo {
   /** Folder name, e.g. "2026-07-08_14-30-00" */
   id: string

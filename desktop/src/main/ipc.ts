@@ -2,6 +2,8 @@ import { ipcMain, BrowserWindow } from 'electron'
 import type { EventChannel, EventChannels, InvokeChannel, InvokeChannels } from '@shared/ipc-contract'
 import type { SettingsStore } from './settings-store'
 import { listSessions, readClips } from './clip-store'
+import { ClipWriter } from './clip-writer'
+import { log } from './logging'
 
 function handle<C extends InvokeChannel>(
   channel: C,
@@ -26,4 +28,7 @@ export function registerIpc(store: SettingsStore): void {
   })
   handle('session:list', () => listSessions())
   handle('session:clips', (sessionId) => readClips(sessionId))
+
+  const clipWriter = new ClipWriter((message) => log.info(message))
+  handle('clip:save', (request) => clipWriter.saveClip(request))
 }

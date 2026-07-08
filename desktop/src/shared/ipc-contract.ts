@@ -1,4 +1,4 @@
-import type { ClipMeta, SessionInfo, Settings } from './types'
+import type { ClipMeta, SaveClipRequest, SessionInfo, Settings } from './types'
 
 /** Request/response channels handled in main via ipcMain.handle. */
 export interface InvokeChannels {
@@ -7,6 +7,7 @@ export interface InvokeChannels {
   'settings:set': { args: [patch: Partial<Settings>]; result: Settings }
   'session:list': { args: []; result: SessionInfo[] }
   'session:clips': { args: [sessionId: string]; result: ClipMeta[] }
+  'clip:save': { args: [request: SaveClipRequest]; result: ClipMeta }
   /** Spike/diagnostic mode only: persist a produced file to the temp dir, returns its path. */
   'spike:save-temp': { args: [fileName: string, data: ArrayBuffer]; result: string }
   /** Spike/diagnostic mode only: deliver the JSON result; main prints it and exits. */

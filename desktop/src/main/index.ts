@@ -11,6 +11,12 @@ import { runSpike, spikeNameFromArgv } from './spike'
 // when the router blocks mDNS multicast.
 app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns')
 
+// E2E tests: synthetic camera + auto-granted permissions.
+if (process.env['REPLAYSWING_FAKE_MEDIA']) {
+  app.commandLine.appendSwitch('use-fake-device-for-media-stream')
+  app.commandLine.appendSwitch('use-fake-ui-for-media-stream')
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {

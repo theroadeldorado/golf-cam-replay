@@ -13,15 +13,17 @@
   },
   "scripts": {
     "dev": "electron-vite dev",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.test.json",
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "e2e": "playwright test",
     "dist:win": "npm run build && electron-builder --win",
     "dist:dir": "npm run build && electron-builder --dir"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
@@ -29,6 +31,7 @@
     "electron": "^43.1.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "playwright": "^1.61.1",
     "typescript": "^6.0.3",
     "vite": "^7.3.6",
     "vitest": "^4.1.10"

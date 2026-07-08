@@ -3,3 +3,5 @@ out/
 release/
 *.local
 *.tsbuildinfo
+test-results/
+playwright-report/
