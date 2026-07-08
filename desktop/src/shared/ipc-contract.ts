@@ -11,11 +11,15 @@ export interface InvokeChannels {
   'spike:save-temp': { args: [fileName: string, data: ArrayBuffer]; result: string }
   /** Spike/diagnostic mode only: deliver the JSON result; main prints it and exits. */
   'spike:report': { args: [report: unknown]; result: void }
+  /** Spike/diagnostic mode only: relay a message to the other spike window. */
+  'spike:relay': { args: [payload: unknown]; result: void }
 }
 
 /** One-way main → renderer events. */
 export interface EventChannels {
   'settings:changed': Settings
+  /** Spike/diagnostic mode only: message relayed from the other spike window. */
+  'spike:message': unknown
 }
 
 export type InvokeChannel = keyof InvokeChannels
