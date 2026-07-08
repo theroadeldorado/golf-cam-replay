@@ -3,6 +3,9 @@ import type { ClipMeta, Settings } from '@shared/types'
 import { CaptureController, type ActiveCamera } from '../capture/capture-controller'
 import { listUsbCameras, onDeviceChange, type UsbCameraInfo } from '../cameras/usb'
 import type { VisionSampleEvent } from '../trigger/vision-trigger'
+import { PhoneCameraSource } from '../cameras/phone-source'
+import { PairingDialog, type PairingInfo } from '../ui/PairingDialog'
+import QRCode from 'qrcode'
 
 function CameraTile({ camera }: { camera: ActiveCamera }): React.JSX.Element {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -43,7 +46,9 @@ export function App(): React.JSX.Element {
   const [armed, setArmed] = useState(false)
   const [vision, setVision] = useState<VisionSampleEvent | null>(null)
   const [replay, setReplay] = useState<{ url: string; meta: ClipMeta } | null>(null)
+  const [pairing, setPairing] = useState<PairingInfo | null>(null)
   const controllerRef = useRef<CaptureController | null>(null)
+  const phoneSourcesRef = useRef(new Map<string, PhoneCameraSource>())
 
   // Boot: load settings, build the controller, reopen saved cameras.
   useEffect(() => {
@@ -106,8 +111,41 @@ export function App(): React.JSX.Element {
     [settings]
   )
 
+  const addPhone = useCallback(async () => {
+    const { webBaseUrl } = await window.api.invoke('app:config')
+    const source = new PhoneCameraSource(webBaseUrl, {
+      onState: (state) => {
+        setPairing((current) => (current ? { ...current, state } : current))
+        if (state === 'connected') {
+          // Small grace so the user sees "Connected!" before the dialog closes.
+          setTimeout(() => setPairing(null), 600)
+        }
+      },
+      onStream: (stream) => {
+        controllerRef.current?.attachExternalStream(source.sessionId, 'Phone', stream)
+      }
+    })
+    phoneSourcesRef.current.set(source.sessionId, source)
+    source.start()
+    const url = source.cameraPageUrl(webBaseUrl)
+    setPairing({ qrDataUrl: await QRCode.toDataURL(url, { margin: 1 }), url, state: 'waiting' })
+  }, [])
+
+  const cancelPairing = useCallback(() => {
+    // Stop only sources that never delivered a stream.
+    for (const [id, source] of phoneSourcesRef.current) {
+      if (!controllerRef.current?.getCameras().some((camera) => camera.id === id)) {
+        source.stop()
+        phoneSourcesRef.current.delete(id)
+      }
+    }
+    setPairing(null)
+  }, [])
+
   const removeCamera = useCallback(
     async (id: string) => {
+      phoneSourcesRef.current.get(id)?.stop()
+      phoneSourcesRef.current.delete(id)
       controllerRef.current?.removeCamera(id)
       if (!settings) return
       const remaining = settings.cameras.filter((camera) => camera.id !== id)
@@ -169,6 +207,7 @@ export function App(): React.JSX.Element {
         )}
         <div style={{ flex: 1 }} />
         <button onClick={() => void openPicker()}>Add camera</button>
+        <button onClick={() => void addPhone()}>Add phone</button>
         <button
           onClick={toggleArmed}
           disabled={cameras.every((camera) => camera.state !== 'live')}
@@ -247,6 +286,8 @@ export function App(): React.JSX.Element {
           </div>
         </div>
       )}
+
+      {pairing && <PairingDialog pairing={pairing} onCancel={cancelPairing} />}
 
       {replay && (
         <div

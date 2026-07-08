@@ -3,6 +3,8 @@ import type { ClipMeta, SaveClipRequest, SessionInfo, Settings } from './types'
 /** Request/response channels handled in main via ipcMain.handle. */
 export interface InvokeChannels {
   'app:version': { args: []; result: string }
+  /** Runtime config: signaling/camera-page base URL (env-overridable for tests). */
+  'app:config': { args: []; result: { webBaseUrl: string } }
   'settings:get': { args: []; result: Settings }
   'settings:set': { args: [patch: Partial<Settings>]; result: Settings }
   'session:list': { args: []; result: SessionInfo[] }

@@ -141,6 +141,15 @@ export class CaptureController {
   }
 
   private attachStream(camera: ActiveCamera, stream: MediaStream): void {
+    // Re-attach (phone reconnect): retire the previous worker and track.
+    const oldWorker = this.workers.get(camera.id)
+    if (oldWorker) {
+      oldWorker.postMessage({ type: 'stop' })
+      this.workers.delete(camera.id)
+      this.encoderTracks.get(camera.id)?.stop()
+      this.encoderTracks.delete(camera.id)
+    }
+
     camera.stream = stream
     camera.state = 'live'
 
