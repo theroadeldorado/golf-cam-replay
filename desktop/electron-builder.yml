@@ -1,0 +1,19 @@
+appId: com.replayswing.desktop
+productName: ReplaySwing
+directories:
+  output: release
+files:
+  - out/**
+  - package.json
+win:
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-Setup-${version}.${ext}
+publish:
+  provider: github
+  owner: theroadeldorado
+  repo: replay-swing

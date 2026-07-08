@@ -1,0 +1,26 @@
+/* Minimal base styles for the M0 shell. The real visual identity lands in the
+   M5 design pass — keep this file boring until then. */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  color-scheme: dark;
+  --bg: #0c0f0d;
+  --fg: #e8ece9;
+  --muted: #8a938d;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  user-select: none;
+  overflow: hidden;
+}
+
+#root {
+  height: 100vh;
+}

@@ -9,6 +9,8 @@ permissions:
 
 jobs:
   build-windows:
+    # v2* tags are built by build-desktop-v2.yml (Electron); this workflow covers v1 releases.
+    if: ${{ !startsWith(github.event.release.tag_name, 'v2') }}
     runs-on: windows-latest
     defaults:
       run:
