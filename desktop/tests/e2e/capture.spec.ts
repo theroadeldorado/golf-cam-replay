@@ -39,7 +39,7 @@ test('captures a clip from the fake camera via manual trigger', async () => {
 
   // Add the fake camera.
   await page.getByRole('button', { name: 'Add camera' }).click()
-  await page.getByRole('button', { name: /fake/i }).first().click()
+  await page.getByTestId('camera-option').first().click()
 
   // Tile goes live and reports a frame rate.
   await expect(page.getByText(/\d+ fps/)).toBeVisible({ timeout: 20_000 })

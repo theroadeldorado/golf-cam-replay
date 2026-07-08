@@ -13,6 +13,8 @@ export interface WorkerInit {
   retentionMs: number
   /** Detection sampling: 0 = disabled (non-primary cameras). */
   motionSampleFps: number
+  /** Normalized 0–1 region of interest for motion sampling; null = full frame. */
+  motionRoi: { x: number; y: number; w: number; h: number } | null
 }
 
 export interface WorkerTrigger {

@@ -137,7 +137,22 @@ class CaptureSession {
 
   private sampleMotion(frame: VideoFrame, wallMs: number): void {
     const ctx = this.motionCanvas!.getContext('2d', { willReadFrequently: true })!
-    ctx.drawImage(frame, 0, 0, MOTION_WIDTH, MOTION_HEIGHT)
+    const roi = this.config.motionRoi
+    if (roi) {
+      ctx.drawImage(
+        frame,
+        roi.x * this.width,
+        roi.y * this.height,
+        roi.w * this.width,
+        roi.h * this.height,
+        0,
+        0,
+        MOTION_WIDTH,
+        MOTION_HEIGHT
+      )
+    } else {
+      ctx.drawImage(frame, 0, 0, MOTION_WIDTH, MOTION_HEIGHT)
+    }
     const { data } = ctx.getImageData(0, 0, MOTION_WIDTH, MOTION_HEIGHT)
     const luma = new Uint8ClampedArray(MOTION_WIDTH * MOTION_HEIGHT)
     for (let i = 0; i < luma.length; i++) {

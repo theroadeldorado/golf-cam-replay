@@ -7,6 +7,7 @@
 import type { ClipMeta, Settings } from '@shared/types'
 import type { FromWorkerMessage, WorkerInit } from './worker-protocol'
 import { openUsbCamera } from '../cameras/usb'
+import { VisionTrigger, type VisionSampleEvent } from '../trigger/vision-trigger'
 
 const BITRATE = 7_000_000
 const CLIP_COLLECT_TIMEOUT_MS = 12_000
@@ -49,6 +50,7 @@ interface ControllerEvents {
   clipSaved: (meta: ClipMeta, primaryMp4: ArrayBuffer) => void
   motion: (sample: MotionSample) => void
   captureStateChanged: (capturing: boolean) => void
+  visionEvent: (event: VisionSampleEvent) => void
 }
 
 export class CaptureController {
@@ -58,8 +60,31 @@ export class CaptureController {
   private thumbnailVideo: HTMLVideoElement | null = null
   private pending: PendingCapture | null = null
   private listeners: Partial<ControllerEvents> = {}
+  private visionTrigger: VisionTrigger | null = null
 
   constructor(private settings: Settings) {}
+
+  /** Arm/disarm the vision trigger. Manual trigger works regardless. */
+  setArmed(armed: boolean): void {
+    if (armed) {
+      this.visionTrigger = new VisionTrigger({
+        sensitivity: this.settings.sensitivity,
+        stillDurationMs: 700,
+        cooldownMs: Math.max(
+          this.settings.cooldownSec * 1000,
+          this.settings.postRollSec * 1000 + 2000
+        )
+      })
+      this.visionTrigger.arm(performance.now())
+    } else {
+      this.visionTrigger?.disarm()
+      this.visionTrigger = null
+    }
+  }
+
+  get isArmed(): boolean {
+    return this.visionTrigger !== null
+  }
 
   on<K extends keyof ControllerEvents>(event: K, listener: ControllerEvents[K]): void {
     this.listeners[event] = listener
@@ -150,7 +175,8 @@ export class CaptureController {
       fps: this.settings.fps,
       bitrate: BITRATE,
       retentionMs: (this.settings.preRollSec + this.settings.postRollSec) * 1000 + RING_SLACK_MS,
-      motionSampleFps: isPrimary ? 15 : 0
+      motionSampleFps: isPrimary ? 15 : 0,
+      motionRoi: isPrimary ? this.settings.roi : null
     }
     worker.postMessage(init, [processor.readable as unknown as Transferable])
 
@@ -181,14 +207,14 @@ export class CaptureController {
   }
 
   /** Fire a capture. Returns false if one is already in flight. */
-  triggerNow(source: 'manual' | 'vision', confidence?: number): boolean {
+  triggerNow(source: 'manual' | 'vision', confidence?: number, atWallMs?: number): boolean {
     if (this.pending) return false
     const liveCameraIds = [...this.cameras.values()]
       .filter((camera) => camera.state === 'live')
       .map((camera) => camera.id)
     if (liveCameraIds.length === 0) return false
 
-    const triggerWallMs = performance.now()
+    const triggerWallMs = atWallMs ?? performance.now()
     this.pending = {
       triggerWallMs,
       source,
@@ -237,9 +263,17 @@ export class CaptureController {
           this.emitCameras()
         }
         break
-      case 'motion':
+      case 'motion': {
         this.listeners.motion?.(message)
+        if (this.visionTrigger) {
+          const event = this.visionTrigger.sample(message.energy, message.wallClockMs)
+          this.listeners.visionEvent?.(event)
+          if (event.fired && !this.pending) {
+            this.triggerNow('vision', undefined, event.firedAtMs)
+          }
+        }
         break
+      }
       case 'clip':
         if (this.pending?.expected.has(message.cameraId)) {
           this.pending.collected.push({

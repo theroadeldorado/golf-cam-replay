@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ClipMeta, Settings } from '@shared/types'
 import { CaptureController, type ActiveCamera } from '../capture/capture-controller'
 import { listUsbCameras, onDeviceChange, type UsbCameraInfo } from '../cameras/usb'
+import type { VisionSampleEvent } from '../trigger/vision-trigger'
 
 function CameraTile({ camera }: { camera: ActiveCamera }): React.JSX.Element {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -39,6 +40,8 @@ export function App(): React.JSX.Element {
   const [available, setAvailable] = useState<UsbCameraInfo[]>([])
   const [showPicker, setShowPicker] = useState(false)
   const [capturing, setCapturing] = useState(false)
+  const [armed, setArmed] = useState(false)
+  const [vision, setVision] = useState<VisionSampleEvent | null>(null)
   const [replay, setReplay] = useState<{ url: string; meta: ClipMeta } | null>(null)
   const controllerRef = useRef<CaptureController | null>(null)
 
@@ -54,6 +57,7 @@ export function App(): React.JSX.Element {
       controllerRef.current = controller
       controller.on('camerasChanged', setCameras)
       controller.on('captureStateChanged', setCapturing)
+      controller.on('visionEvent', setVision)
       controller.on('clipSaved', (meta, primaryMp4) => {
         const url = URL.createObjectURL(new Blob([primaryMp4], { type: 'video/mp4' }))
         setReplay((previous) => {
@@ -122,15 +126,25 @@ export function App(): React.JSX.Element {
     controllerRef.current?.triggerNow('manual')
   }, [])
 
-  // Keyboard: T = trigger (v1 muscle memory), Esc = dismiss replay.
+  const toggleArmed = useCallback(() => {
+    setArmed((current) => {
+      const next = !current
+      controllerRef.current?.setArmed(next)
+      if (!next) setVision(null)
+      return next
+    })
+  }, [])
+
+  // Keyboard: A = arm/disarm, T = manual trigger (v1 muscle memory), Esc = dismiss replay.
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === 't' || event.key === 'T') recordNow()
+      if (event.key === 'a' || event.key === 'A') toggleArmed()
       if (event.key === 'Escape') setReplay(null)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [recordNow])
+  }, [recordNow, toggleArmed])
 
   const gridColumns = cameras.length <= 1 ? 1 : 2
 
@@ -138,8 +152,36 @@ export function App(): React.JSX.Element {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: 16, gap: 12 }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <h1 style={{ fontSize: 18 }}>ReplaySwing</h1>
+        {armed && vision && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--muted)' }}>
+            <span data-testid="vision-state">{vision.state}</span>
+            <div style={{ width: 120, height: 8, background: '#22271f', borderRadius: 4, overflow: 'hidden' }}>
+              <div
+                style={{
+                  width: `${Math.min(100, (vision.energy / Math.max(vision.spikeThreshold, 0.01)) * 100)}%`,
+                  height: '100%',
+                  background: vision.state === 'address' ? '#12a15c' : '#5a6b5f',
+                  transition: 'width 80ms linear'
+                }}
+              />
+            </div>
+          </div>
+        )}
         <div style={{ flex: 1 }} />
         <button onClick={() => void openPicker()}>Add camera</button>
+        <button
+          onClick={toggleArmed}
+          disabled={cameras.every((camera) => camera.state !== 'live')}
+          style={{
+            background: armed ? '#c2410c' : '#1d4ed8',
+            color: '#fff',
+            padding: '8px 20px',
+            borderRadius: 6,
+            border: 'none'
+          }}
+        >
+          {armed ? 'Disarm (A)' : 'Arm (A)'}
+        </button>
         <button
           onClick={recordNow}
           disabled={capturing || cameras.every((camera) => camera.state !== 'live')}
@@ -194,6 +236,7 @@ export function App(): React.JSX.Element {
               available.map((info) => (
                 <button
                   key={info.deviceId}
+                  data-testid="camera-option"
                   onClick={() => void addCamera(info)}
                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', marginBottom: 6, background: '#22271f', color: 'inherit', border: 'none', borderRadius: 6, cursor: 'pointer' }}
                 >
