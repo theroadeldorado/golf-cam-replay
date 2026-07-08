@@ -7,6 +7,10 @@ export interface InvokeChannels {
   'settings:set': { args: [patch: Partial<Settings>]; result: Settings }
   'session:list': { args: []; result: SessionInfo[] }
   'session:clips': { args: [sessionId: string]; result: ClipMeta[] }
+  /** Spike/diagnostic mode only: persist a produced file to the temp dir, returns its path. */
+  'spike:save-temp': { args: [fileName: string, data: ArrayBuffer]; result: string }
+  /** Spike/diagnostic mode only: deliver the JSON result; main prints it and exits. */
+  'spike:report': { args: [report: unknown]; result: void }
 }
 
 /** One-way main → renderer events. */

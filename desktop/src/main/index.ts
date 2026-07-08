@@ -4,6 +4,7 @@ import { SettingsStore } from './settings-store'
 import { settingsFilePath } from './paths'
 import { registerIpc } from './ipc'
 import { createMainWindow } from './windows'
+import { runSpike, spikeNameFromArgv } from './spike'
 
 // Advertise raw LAN IPs in WebRTC host candidates instead of mDNS .local
 // names, so a phone on the same network can always dial this machine even
@@ -23,6 +24,12 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.whenReady().then(() => {
+    const spikeName = spikeNameFromArgv(process.argv)
+    if (spikeName) {
+      runSpike(spikeName)
+      return
+    }
+
     setupLogging()
     log.info(`ReplaySwing v${__APP_VERSION__} starting`)
 

@@ -37,7 +37,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/renderer/index.html'),
-          pip: resolve(__dirname, 'src/renderer/pip.html')
+          pip: resolve(__dirname, 'src/renderer/pip.html'),
+          'spike-encode': resolve(__dirname, 'src/renderer/spike-encode.html')
         }
       }
     }
