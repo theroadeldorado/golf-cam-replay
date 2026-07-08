@@ -5,7 +5,7 @@ import Footer from '@/components/Footer';
 export const metadata: Metadata = {
   title: 'Documentation — ReplaySwing',
   description:
-    'Complete documentation for ReplaySwing: camera setup, audio trigger, recording, playback, PiP overlay, drawing tools, swing comparison, keyboard shortcuts, and more.',
+    'Complete documentation for ReplaySwing: camera setup, phone pairing, swing detection, recording, PiP overlay, sessions, keyboard shortcuts, and more.',
 };
 
 export default function DocsLayout({ children }: { children: React.ReactNode }) {

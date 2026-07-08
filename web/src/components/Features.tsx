@@ -1,12 +1,10 @@
 import {
-  AudioLines,
+  Eye,
   PictureInPicture2,
   Smartphone,
   Camera,
   RotateCcw,
-  PenTool,
-  Columns2,
-  BrainCircuit,
+  Timer,
   FolderOpen,
   Heart,
   Star,
@@ -15,70 +13,51 @@ import {
 
 const features = [
   {
-    icon: AudioLines,
-    title: 'Audio-Triggered Capture',
+    icon: Eye,
+    title: 'Sees Your Swing',
     description:
-      'Detects club impact and records automatically. Live mic preview with color-coded level meter lets you pick the right mic and dial in threshold — no guesswork.',
+      'No microphone, no impact-sound tuning. ReplaySwing watches the camera: you settle at address, you swing, it records. Practice waggles and people walking by don’t fire it.',
+  },
+  {
+    icon: Timer,
+    title: 'Never Misses the Backswing',
+    description:
+      'A rolling buffer keeps the seconds before the trigger, so every clip includes your full setup and backswing — not just the follow-through.',
+  },
+  {
+    icon: QrCode,
+    title: 'Phone Camera in Ten Seconds',
+    description:
+      'Scan a QR code and your phone becomes a wireless camera in its browser. No app to install, no IP addresses to type. Video stays on your Wi-Fi.',
   },
   {
     icon: PictureInPicture2,
-    title: 'Picture-in-Picture Overlay',
+    title: 'Replay on Your Sim Screen',
     description:
-      'Drag a floating replay window on top of your simulator. Scroll to zoom in up to 5x. Drawing annotations show on PiP too.',
-  },
-  {
-    icon: Smartphone,
-    title: 'Use Your Phone as a Camera',
-    description:
-      'Turn any phone into a wireless camera with free apps like DroidCam or EpocCam. No extra hardware needed.',
+      'A floating overlay sits on top of your simulator and mirrors the app — live view between shots, looping replay right after each swing.',
   },
   {
     icon: Camera,
-    title: 'Multi-Camera Support',
+    title: 'Multi-Camera Angles',
     description:
-      'Record from multiple angles at once — USB cameras, phones, or network cameras. Switch views instantly.',
+      'Record face-on and down-the-line at once — up to four USB cameras and phones, all captured from the same trigger.',
   },
   {
     icon: RotateCcw,
     title: 'Instant Replay',
     description:
-      'Looping playback starts automatically after every shot. Adjust speed to study your form in detail.',
-  },
-  {
-    icon: PenTool,
-    title: 'Drawing Tools',
-    description:
-      'Annotate your swings with lines and circles to highlight key positions and angles.',
-  },
-  {
-    icon: Columns2,
-    title: 'Swing Comparison',
-    description:
-      'Side-by-side synchronized playback lets you compare swings and track improvement over time.',
-  },
-  {
-    icon: BrainCircuit,
-    title: 'Smart Detection',
-    description:
-      'AI audio classifier learns the unique sounds of your environment for more accurate trigger detection.',
+      'Looping playback starts automatically after every shot, and you stay armed — just step up and hit the next ball.',
   },
   {
     icon: FolderOpen,
-    title: 'Session Management',
+    title: 'Session Library',
     description:
-      'Browse past sessions, switch between them instantly, and choose where recordings are saved.',
+      'Every shot lands in a session with thumbnails. Browse past sessions and replay any swing with one click.',
   },
   {
     icon: Star,
     title: 'Pin Favorite Shots',
-    description:
-      'Pin your best swings for quick access. Pinned shots are auto-selected in the comparison view.',
-  },
-  {
-    icon: QrCode,
-    title: 'Share to Phone',
-    description:
-      'Generate a QR code to send any clip directly to your phone over WiFi — no cables or cloud upload needed.',
+    description: 'Pin your best swings for quick access, delete the mishits.',
   },
   {
     icon: Heart,

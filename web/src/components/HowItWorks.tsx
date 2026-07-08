@@ -6,14 +6,14 @@ const steps = [
     icon: Camera,
     title: 'Set Up Your Camera',
     description:
-      'Point a USB camera at your swing area — or use your phone as a wireless camera with a free app like DroidCam.',
+      'Plug in a USB camera — or scan a QR code and your phone becomes a wireless camera in its browser. No apps, no IP addresses.',
   },
   {
     number: '02',
     icon: Disc3,
     title: 'Arm & Swing',
     description:
-      'Hit the Arm button and take your shot. The app listens for the impact sound and auto-records your swing.',
+      'Hit Arm and take your shot. The app watches the camera — when you settle at address and swing, it records automatically. No microphone needed.',
   },
   {
     number: '03',
