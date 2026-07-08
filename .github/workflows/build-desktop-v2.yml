@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   build-windows:
-    # Releases tagged v2* build the Electron app; older tags stay with the v1 workflow.
     if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v2')
     runs-on: windows-latest
     defaults:

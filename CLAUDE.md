@@ -4,15 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Structure
 
-Monorepo with three packages:
+Monorepo with two packages:
 
-- **`app/`** — v1 desktop swing capture application (Python/PyQt6, targets Windows) — maintenance only
-- **`desktop/`** — v2 desktop app (Electron/TypeScript) — active development on the `v2` branch; see `desktop/README.md`
-- **`web/`** — Marketing website at replayswing.com (Next.js/TypeScript), also hosts the phone-camera page (`/camera`) and WebRTC signaling relay (`/api/signal`) for v2
+- **`desktop/`** — ReplaySwing desktop app (Electron/TypeScript). See `desktop/README.md` for architecture.
+- **`web/`** — Marketing website at replayswing.com (Next.js/TypeScript). Also hosts the phone-camera page (`/camera`) and the WebRTC signaling relay (`/api/signal`) the desktop app pairs through.
+
+The v1 Python/PyQt6 app was removed after the v2 rewrite; its history lives in git (last present at tag/commits before the `v2` merge).
 
 ## Common Commands
 
-### Desktop v2 (Electron)
+### Desktop (Electron)
 
 ```bash
 cd desktop && npm install
@@ -20,100 +21,50 @@ npm run dev          # hot-reloading app
 npm test             # vitest unit tests
 npm run e2e          # Playwright E2E (fake camera, no hardware needed)
 npm run build        # typecheck + production build
+npm run dist:win     # NSIS installer (CI does this on v2* release tags)
 ```
 
-Key v2 facts: WebCodecs H.264 + ChunkRing recording pipeline (no OpenCV), vision-based
-trigger (no microphone), phone cameras via QR → browser → WebRTC (no DroidCam), sessions
-written in the v1-compatible `~/GolfSwings/{timestamp}/clips.json` format. Gotcha:
-MediaStreamTrack is NOT transferable in Electron — transfer the MediaStreamTrackProcessor's
-ReadableStream to workers instead.
-
-### App v1 (Python)
-
-```bash
-# Install dependencies (from app/)
-pip install -r app/requirements.txt
-
-# Run the application
-python app/swing_capture.py
-
-# Run all tests
-python -m pytest app/tests/ -v
-
-# Run a single test file
-python -m pytest app/tests/test_config.py -v
-
-# Run tests matching a pattern
-python -m pytest app/tests/ -v -k "camera"
-```
-
-No linter or formatter is configured for Python.
+Field diagnostics: the packaged exe runs `--spike=encode` (WebCodecs H.264 validation)
+and `--spike=pip` (PiP loopback validation), printing JSON reports.
 
 ### Web (Next.js)
 
 ```bash
-# Install dependencies (from web/)
 cd web && npm install
-
-# Dev server
-cd web && npm run dev
-
-# Build
-cd web && npm run build
-
-# Lint
-cd web && npm run lint
+npm run dev
+npm run build
+npm run lint
 ```
 
-## App Architecture
+Requires `GITHUB_TOKEN` (see `web/.env.example`) for bug reports + release download links,
+and `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` for the phone-camera signaling
+relay in production (falls back to in-memory for local dev).
 
-Entry point: `app/swing_capture.py`. PyQt6 desktop app that records golf swings via audio-triggered capture with USB/network cameras.
+## Desktop Architecture (key facts)
 
-### Signal-Driven Threading Model
-
-All heavy I/O runs in QThreads communicating with the main UI via pyqtSignals — never direct callbacks:
-
-- **CameraCapture** (QThread per camera) → `frame_ready(camera_id, frame, timestamp)`
-- **AudioDetector** (QThread) → `trigger_detected(confidence, features)`
-- **MainWindow** receives signals, updates UI, manages recording
-
-Thread safety: `threading.Lock()` on shared state (frame buffers, audio classifier, camera transforms).
-
-### Module Map
-
-| Module | Role |
-|---|---|
-| `swing_capture.py` | MainWindow — UI state machine, playback, dialogs, keyboard shortcuts |
-| `camera_engine.py` | CameraCapture thread, per-camera transforms, PersonDetector (HOG+SVM), network camera utilities |
-| `audio_engine.py` | AudioDetector thread, AudioFeatureExtractor (12 spectral features), AudioClassifier (heuristic + RandomForest) |
-| `recording.py` | FrameBuffer (circular pre-trigger buffer), RecordingManager (save/delete clips, clips.json metadata) |
-| `config.py` | AppConfig/CameraPreset dataclasses, JSON persistence with atomic writes |
-| `drawing_overlay.py` | Shape hierarchy (Line/Circle), transparent overlay widget, normalized 0.0–1.0 coordinates |
-| `comparison_view.py` | ComparisonWindow — side-by-side synchronized playback with frame offset |
-| `ui_components.py` | VideoPlayer, PiPWindow, ClipGallery, LogPanel, `composite_grid()` |
-
-### Recording Workflow
-
-Arm → AudioDetector fires trigger → RecordingManager saves pre-buffer (2s) + post-trigger (4s) from all cameras → auto-playback loops → stays armed for next shot.
-
-### Key Patterns
-
-- **Graceful degradation**: Optional imports (PyAudio, scikit-learn, qrcode) wrapped in try/except with feature flags (`AUDIO_AVAILABLE`, `SKLEARN_AVAILABLE`). Always check these flags before touching audio/ML code.
-- **Normalized coordinates**: Drawing overlay uses 0.0–1.0 relative coords that survive window resizing.
-- **Config persistence**: JSON with temp-file-then-rename for atomic writes to `~/GolfSwings/settings.json`.
-- **Session storage**: `~/GolfSwings/{timestamp}/` folders with clips.json, MP4s, and JPG thumbnails.
-- **Audio classifier dual mode**: Heuristic (hand-tuned spectral weights, default) switches to RandomForest after 10+ user-labeled samples in `~/GolfSwings/training_data/`.
-
-## Web Architecture
-
-Next.js App Router with Tailwind CSS v4. Single-page marketing site at `/`, documentation at `/docs`, and a bug report API at `/api/bug-report` (proxies to GitHub Issues).
-
-Requires `GITHUB_TOKEN` env var (see `web/.env.example`) for the bug report endpoint and release download links.
+- **Main process** (`desktop/src/main/`): windows, atomic-write settings at
+  `~/GolfSwings/settings.v2.json`, clip writes, `clip://` protocol, auto-update
+  (electron-updater + GitHub Releases), crash capture. All IPC is typed via
+  `src/shared/ipc-contract.ts`.
+- **Renderer** owns all media: one worker per camera (`capture/encoder.worker.ts`)
+  runs frames → WebCodecs H.264 → ChunkRing (keyframe-aligned circular buffer) →
+  mp4-muxer on trigger. The vision trigger (`trigger/vision-trigger.ts`) is a pure,
+  unit-tested FSM (stillness at address → motion spike) fed by downscaled motion
+  energy from the primary camera's worker. No microphone anywhere.
+- **Phone cameras**: QR → `replayswing.com/camera?s={session}` → WebRTC offer,
+  signaled through polling API routes; media is P2P on the LAN. No DroidCam.
+- **PiP overlay**: separate frameless always-on-top window fed by a WebRTC loopback
+  of a composite canvas (`playback/program-bus.ts`).
+- **Sessions**: `~/GolfSwings/{timestamp}/` with `clips.json`, MP4s, JPG thumbnails
+  (v1-compatible format — old sessions appear in the gallery).
+- **Gotcha**: MediaStreamTrack is NOT transferable in Electron — transfer the
+  MediaStreamTrackProcessor's ReadableStream to workers instead.
+- E2E uses Chromium fake-media flags via env: `REPLAYSWING_FAKE_MEDIA=1`,
+  `REPLAYSWING_FAKE_MEDIA_FILE=<y4m>`, plus `REPLAYSWING_DATA_DIR` and
+  `REPLAYSWING_WEB_BASE` overrides.
 
 ## CI/CD
 
-GitHub Actions workflow (`.github/workflows/build-release.yml`) builds a Windows .exe via PyInstaller on release creation, then uploads it to the GitHub Release.
-
-## Custom Skills
-
-`.claude/commands/` contains task-specific prompts: `dev.md`, `test.md`, `qa.md`, `review.md`, `ui.md`, `golf-consultant.md`, `mock-camera.md`, `update-docs.md`.
+`.github/workflows/build-desktop-v2.yml` builds and publishes the NSIS installer +
+auto-update metadata to the GitHub Release on `v2*` tags (also runs tests). The
+website deploys via Vercel.
