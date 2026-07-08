@@ -2,6 +2,16 @@
 .DS_Store
 Thumbs.db
 
+# Python (v1 app)
+__pycache__/
+*.pyc
+
+# Node/test byproducts
+node_modules/
+test-results/
+desktop/screenshots/
+desktop/undefined/
+
 # IDEs
 .vscode/
 .idea/
