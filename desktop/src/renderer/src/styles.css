@@ -136,6 +136,32 @@ button:focus-visible {
   color: var(--lock);
 }
 
+.topbar button.on {
+  background: var(--lock);
+  border-color: var(--lock);
+  color: var(--ink);
+}
+
+.pick-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 8px 14px;
+  background: var(--lock);
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.pick-banner button {
+  background: rgba(11, 13, 12, 0.15);
+  border: 1px solid rgba(11, 13, 12, 0.3);
+  color: var(--ink);
+  padding: 4px 12px;
+}
+
 .main {
   flex: 1;
   display: flex;
@@ -246,6 +272,24 @@ button:focus-visible {
 .replay-caption strong {
   color: var(--lock);
   font-weight: 600;
+}
+
+.speed-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.speed-control span {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  min-width: 42px;
+  color: var(--fg);
+}
+
+.speed-control input[type='range'] {
+  width: 130px;
+  accent-color: var(--lock);
 }
 
 /* ---- Console (bottom bar) ---- */
@@ -427,6 +471,85 @@ button:focus-visible {
   font-size: 12px;
   text-align: center;
   line-height: 1.7;
+}
+
+/* ---- Comparison ---- */
+
+.compare-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.compare-panes {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.compare-pane {
+  position: relative;
+  background: #000;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.compare-pane video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.compare-label {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: rgba(11, 13, 12, 0.8);
+  border: 1px solid var(--line);
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.compare-controls {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compare-scrub {
+  flex: 1;
+  accent-color: var(--lock);
+}
+
+.compare-speed,
+.compare-offset {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.compare-speed button.on {
+  background: var(--lock);
+  border-color: var(--lock);
+  color: var(--ink);
+}
+
+.compare-offset span {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  min-width: 54px;
+  text-align: center;
+  color: var(--muted);
 }
 
 /* ---- Draw toolbar ---- */

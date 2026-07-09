@@ -85,7 +85,9 @@ test('captures a second clip in the same session', async () => {
 })
 
 test('selecting a shot from the rail plays it on the stage', async () => {
-  await page.keyboard.press('Escape') // back to live
+  // Back to live if a replay is up (click, not Escape — robust to focus).
+  const backToLive = page.getByRole('button', { name: 'Back to live' })
+  if (await backToLive.isVisible().catch(() => false)) await backToLive.click()
   await page.locator('.shot-card').last().click() // oldest shot
 
   await expect(page.getByText(/shot_0000\.mp4/)).toBeVisible()
@@ -98,4 +100,12 @@ test('selecting a shot from the rail plays it on the stage', async () => {
       })
     )
     .toEqual({ w: 1280, err: null })
+
+  // Slow-mo slider drives the replay's playbackRate.
+  await page.getByTestId('replay-speed-slider').fill('0.25')
+  await expect(page.getByTestId('replay-speed')).toHaveText('0.25×')
+  const rate = await page.evaluate(
+    () => (document.querySelector('.replay-stage video') as HTMLVideoElement).playbackRate
+  )
+  expect(rate).toBeCloseTo(0.25)
 })

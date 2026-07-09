@@ -7,6 +7,7 @@ import type { VisionSampleEvent } from '../trigger/vision-trigger'
 import { ProgramBus } from '../playback/program-bus'
 import { PairingDialog, type PairingInfo } from '../ui/PairingDialog'
 import { ShareDialog, type ShareInfo } from '../ui/ShareDialog'
+import { ComparisonView, type CompareClip } from '../compare/ComparisonView'
 import { Rail } from '../ui/Rail'
 import { SettingsSheet } from '../ui/SettingsSheet'
 import { DrawingOverlay, type DrawTool } from '../drawing/DrawingOverlay'
@@ -73,6 +74,11 @@ function ReplayStage({
   onSave: () => void
 }): React.JSX.Element {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [speed, setSpeed] = useState(1)
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.playbackRate = speed
+  }, [speed, replay.url])
 
   return (
     <div className="replay-stage">
@@ -91,7 +97,18 @@ function ReplayStage({
       </div>
       <div className="replay-caption">
         <strong>{replay.label}</strong>
-        <span>looping — Esc or Back to live</span>
+        <label className="speed-control" title="Playback speed">
+          <span data-testid="replay-speed">{speed === 1 ? '1×' : `${speed.toFixed(2)}×`}</span>
+          <input
+            data-testid="replay-speed-slider"
+            type="range"
+            min={0.1}
+            max={1}
+            step={0.05}
+            value={speed}
+            onChange={(e) => setSpeed(Number(e.target.value))}
+          />
+        </label>
         <div style={{ flex: 1 }} />
         <button data-testid="share-clip" onClick={onShare}>
           Share
@@ -169,6 +186,9 @@ export function App(): React.JSX.Element {
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [selectedSession, setSelectedSession] = useState<string | null>(null)
   const [clips, setClips] = useState<ClipMeta[]>([])
+  // Comparison: pick A then B from the rail, then open the two-clip view.
+  const [comparePick, setComparePick] = useState<{ a: CompareClip | null } | null>(null)
+  const [comparison, setComparison] = useState<{ a: CompareClip; b: CompareClip } | null>(null)
   const controllerRef = useRef<CaptureController | null>(null)
   const busRef = useRef<ProgramBus | null>(null)
   const phoneSourcesRef = useRef(new Map<string, PhoneCameraSource>())
@@ -426,6 +446,22 @@ export function App(): React.JSX.Element {
     [selectedSession]
   )
 
+  // Rail click during pick mode assigns A, then B (opening the comparison).
+  const pickForCompare = useCallback(
+    (clip: ClipMeta) => {
+      if (!selectedSession) return
+      const ref: CompareClip = { sessionId: selectedSession, clip }
+      setComparePick((current) => {
+        if (!current?.a) return { a: ref }
+        setComparison({ a: current.a, b: ref })
+        return null
+      })
+    },
+    [selectedSession]
+  )
+
+  const onRailClick = comparePick ? pickForCompare : playClip
+
   // Keyboard: A = arm, T = manual trigger, P = PiP.
   // Esc exits draw mode first, then dismisses the replay. Delete removes the
   // selected shape while drawing.
@@ -470,14 +506,32 @@ export function App(): React.JSX.Element {
         <button onClick={() => void window.api.invoke('pip:toggle')} title="Overlay window (P)">
           PiP
         </button>
+        <button
+          data-testid="compare-start"
+          className={comparePick ? 'on' : ''}
+          onClick={() => {
+            setComparison(null)
+            setComparePick((current) => (current ? null : { a: null }))
+          }}
+          title="Compare two swings"
+        >
+          Compare
+        </button>
         <button onClick={() => setShowSettings(true)} title="Settings">
           ⚙
         </button>
       </header>
 
+      {comparePick && (
+        <div className="pick-banner" data-testid="pick-banner">
+          <span>{comparePick.a ? 'Pick the second shot (B)' : 'Pick the first shot (A)'}</span>
+          <button onClick={() => setComparePick(null)}>Cancel</button>
+        </div>
+      )}
+
       <div className="main">
         <div className="stage" style={{ position: 'relative' }}>
-          {(cameras.length > 0 || replay) && (
+          {!comparison && (cameras.length > 0 || replay) && (
             <DrawToolbar
               active={draw.active}
               tool={draw.tool}
@@ -494,7 +548,14 @@ export function App(): React.JSX.Element {
               onDelete={deleteSelectedShape}
             />
           )}
-          {replay ? (
+          {comparison ? (
+            <ComparisonView
+              a={comparison.a}
+              b={comparison.b}
+              onSwap={() => setComparison((c) => (c ? { a: c.b, b: c.a } : c))}
+              onExit={() => setComparison(null)}
+            />
+          ) : replay ? (
             <ReplayStage
               replay={replay}
               shapes={replay.cameraId ? (settings?.drawings[replay.cameraId] ?? []) : []}
@@ -548,7 +609,7 @@ export function App(): React.JSX.Element {
             setSelectedSession(id)
             void window.api.invoke('session:clips', id).then(setClips)
           }}
-          onPlay={playClip}
+          onPlay={onRailClick}
           onPin={(index, pinned) => {
             if (selectedSession) {
               void window.api.invoke('clip:pin', selectedSession, index, pinned).then(setClips)
