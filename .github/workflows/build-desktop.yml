@@ -39,15 +39,25 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Package and upload to release
+      - name: Package installer
+        run: npx electron-builder --win --publish never
+
+      # Upload the installer + auto-update metadata straight to the release
+      # that triggered this run, whatever its type (draft/prerelease/stable).
+      # Avoids electron-builder's release-type matching, which skips uploads
+      # when its default (draft) doesn't match an existing prerelease.
+      - name: Upload to release
         if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --win --publish always
-
-      - name: Package (no publish)
-        if: github.event_name == 'workflow_dispatch'
-        run: npx electron-builder --win --publish never
+        shell: pwsh
+        run: |
+          $files = @(
+            Get-ChildItem release/ReplaySwing-Setup-*.exe
+            Get-ChildItem release/*.blockmap -ErrorAction SilentlyContinue
+            Get-ChildItem release/latest.yml -ErrorAction SilentlyContinue
+          ) | ForEach-Object { $_.FullName }
+          gh release upload ${{ github.event.release.tag_name }} $files --clobber
 
       - name: Upload artifact
         if: github.event_name == 'workflow_dispatch'
