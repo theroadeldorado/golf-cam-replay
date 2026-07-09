@@ -5,7 +5,6 @@ import { needsCorrection, nudgeOffsetFrames, slaveTargetTime, stepFrame } from '
 export interface CompareOption {
   sessionId: string
   clip: ClipMeta
-  label: string
 }
 
 const SPEEDS = [0.25, 0.5, 1] as const
@@ -13,6 +12,37 @@ const DRIFT_THRESHOLD_MS = 50
 
 function fpsOf(option: CompareOption | null): number {
   return option?.clip.v2?.fps ?? 30
+}
+
+/** "2026-07-09_10-29-17" → "Jul 9, 10:29 AM" (falls back to the raw id). */
+function sessionLabel(sessionId: string): string {
+  const m = sessionId.match(/^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})$/)
+  if (!m) return sessionId
+  const [, y, mo, d, h, mi] = m.map(Number) as unknown as number[]
+  return new Date(y, mo - 1, d, h, mi).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  })
+}
+
+function shotLabel(clip: ClipMeta): string {
+  return `Shot ${Number(clip.file.match(/shot_(\d+)/)?.[1] ?? 0) + 1}`
+}
+
+/** Group options by session, preserving the incoming (newest-first) order. */
+function groupBySession(options: CompareOption[]): { sessionId: string; label: string; items: { index: number; label: string }[] }[] {
+  const groups: { sessionId: string; label: string; items: { index: number; label: string }[] }[] = []
+  options.forEach((option, index) => {
+    let group = groups.find((g) => g.sessionId === option.sessionId)
+    if (!group) {
+      group = { sessionId: option.sessionId, label: sessionLabel(option.sessionId), items: [] }
+      groups.push(group)
+    }
+    group.items.push({ index, label: shotLabel(option.clip) })
+  })
+  return groups
 }
 
 /** Load a clip as an object URL, revoking the previous one. */
@@ -150,28 +180,43 @@ export function ComparisonModal({
 
   const offsetFrames = Math.round(offsetSec * fpsOf(optionB))
 
+  const groups = groupBySession(options)
+
   const pane = (
     side: 'a' | 'b',
     index: number,
     setIndex: (n: number) => void,
+    option: CompareOption | null,
     url: string | undefined,
     ref: React.RefObject<HTMLVideoElement | null>
   ): React.JSX.Element => (
     <div className="compare-pane">
-      <select
-        className="compare-select"
-        data-testid={`compare-select-${side}`}
-        value={index}
-        onChange={(e) => setIndex(Number(e.target.value))}
-      >
-        {options.map((option, i) => (
-          <option key={`${option.sessionId}/${option.clip.file}`} value={i}>
-            {side === 'a' ? 'A' : 'B'} · {option.label}
-          </option>
-        ))}
-      </select>
+      <div className="compare-pane-head">
+        <span className="compare-badge">{side === 'a' ? 'A' : 'B'}</span>
+        <select
+          className="compare-select"
+          data-testid={`compare-select-${side}`}
+          value={index}
+          onChange={(e) => setIndex(Number(e.target.value))}
+        >
+          {groups.map((group) => (
+            <optgroup key={group.sessionId} label={group.label}>
+              {group.items.map((item) => (
+                <option key={item.index} value={item.index}>
+                  {item.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </div>
       <div className="compare-video-wrap">
         <video ref={ref} data-testid={`compare-video-${side}`} src={url} muted playsInline loop />
+        {option && (
+          <span className="compare-caption">
+            {sessionLabel(option.sessionId)} · {shotLabel(option.clip)}
+          </span>
+        )}
       </div>
     </div>
   )
@@ -193,8 +238,8 @@ export function ComparisonModal({
         ) : (
           <>
             <div className="compare-panes">
-              {pane('a', indexA, setIndexA, urlA, videoA)}
-              {pane('b', indexB, setIndexB, urlB, videoB)}
+              {pane('a', indexA, setIndexA, optionA, urlA, videoA)}
+              {pane('b', indexB, setIndexB, optionB, urlB, videoB)}
             </div>
 
             <div className="compare-controls">

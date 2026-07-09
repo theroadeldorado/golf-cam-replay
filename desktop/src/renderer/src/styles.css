@@ -498,7 +498,28 @@ button:focus-visible {
   min-height: 0;
 }
 
+.compare-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compare-badge {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--lock);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 13px;
+}
+
 .compare-select {
+  flex: 1;
   background: var(--panel-raised);
   color: var(--fg);
   border: 1px solid var(--line);
@@ -509,12 +530,25 @@ button:focus-visible {
 }
 
 .compare-video-wrap {
+  position: relative;
   flex: 1;
   min-height: 0;
   background: #000;
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
+}
+
+.compare-caption {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: rgba(11, 13, 12, 0.8);
+  border: 1px solid var(--line);
+  padding: 3px 8px;
+  border-radius: 4px;
 }
 
 .compare-video-wrap video {

@@ -452,11 +452,7 @@ export function App(): React.JSX.Element {
     const options: CompareOption[] = []
     for (const session of sessionList) {
       const sessionClips = await window.api.invoke('session:clips', session.id)
-      const date = session.id.replace('_', ' ')
-      sessionClips.forEach((clip) => {
-        const shot = clip.file.match(/shot_(\d+)/)?.[1] ?? ''
-        options.push({ sessionId: session.id, clip, label: `${date} · Shot ${shot}` })
-      })
+      sessionClips.forEach((clip) => options.push({ sessionId: session.id, clip }))
     }
     setCompareOptions(options)
   }, [])
