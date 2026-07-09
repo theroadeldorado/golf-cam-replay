@@ -6,6 +6,7 @@ import { PhoneCameraSource } from '../cameras/phone-source'
 import type { VisionSampleEvent } from '../trigger/vision-trigger'
 import { ProgramBus } from '../playback/program-bus'
 import { PairingDialog, type PairingInfo } from '../ui/PairingDialog'
+import { ShareDialog, type ShareInfo } from '../ui/ShareDialog'
 import { Rail } from '../ui/Rail'
 import { SettingsSheet } from '../ui/SettingsSheet'
 import { DrawingOverlay, type DrawTool } from '../drawing/DrawingOverlay'
@@ -29,6 +30,9 @@ interface ReplayInfo {
   objectUrl: boolean
   /** Which camera's footage this is — binds the replay to that camera's drawings. */
   cameraId: string | null
+  /** On-disk location, for share/save of the playing clip. */
+  sessionId: string
+  fileName: string
 }
 
 interface DrawState {
@@ -54,7 +58,9 @@ function ReplayStage({
   selectedId,
   onSelect,
   onShapesChange,
-  onDismiss
+  onDismiss,
+  onShare,
+  onSave
 }: {
   replay: ReplayInfo
   shapes: Shape[]
@@ -63,6 +69,8 @@ function ReplayStage({
   onSelect: (id: string | null) => void
   onShapesChange: (shapes: Shape[], commit: boolean) => void
   onDismiss: () => void
+  onShare: () => void
+  onSave: () => void
 }): React.JSX.Element {
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -85,6 +93,12 @@ function ReplayStage({
         <strong>{replay.label}</strong>
         <span>looping — Esc or Back to live</span>
         <div style={{ flex: 1 }} />
+        <button data-testid="share-clip" onClick={onShare}>
+          Share
+        </button>
+        <button data-testid="save-clip" onClick={onSave}>
+          Save
+        </button>
         <button onClick={onDismiss}>Back to live</button>
       </div>
     </div>
@@ -148,6 +162,8 @@ export function App(): React.JSX.Element {
   const [vision, setVision] = useState<VisionSampleEvent | null>(null)
   const [replay, setReplay] = useState<ReplayInfo | null>(null)
   const [pairing, setPairing] = useState<PairingInfo | null>(null)
+  const [share, setShare] = useState<ShareInfo | null>(null)
+  const [saveNote, setSaveNote] = useState<string | null>(null)
   const [draw, setDraw] = useState<DrawState>({ active: false, tool: 'line', color: SHAPE_COLORS[0] })
   const [drawSelection, setDrawSelection] = useState<DrawSelection | null>(null)
   const [sessions, setSessions] = useState<SessionInfo[]>([])
@@ -191,9 +207,18 @@ export function App(): React.JSX.Element {
       controller.on('clipSaved', (meta, primaryMp4) => {
         const url = URL.createObjectURL(new Blob([primaryMp4], { type: 'video/mp4' }))
         const cameraId = clipPrimaryCameraId(meta)
-        setReplay((previous) => {
-          if (previous?.objectUrl) URL.revokeObjectURL(previous.url)
-          return { url, label: `Saved ${meta.file}`, objectUrl: true, cameraId }
+        void window.api.invoke('session:current').then((sessionId) => {
+          setReplay((previous) => {
+            if (previous?.objectUrl) URL.revokeObjectURL(previous.url)
+            return {
+              url,
+              label: `Saved ${meta.file}`,
+              objectUrl: true,
+              cameraId,
+              sessionId: sessionId ?? '',
+              fileName: meta.file
+            }
+          })
         })
         bus.setReplayUrl(url, cameraId)
         void refreshGallery()
@@ -357,6 +382,26 @@ export function App(): React.JSX.Element {
     busRef.current?.setReplayUrl(null)
   }, [])
 
+  const shareClip = useCallback(async (info: ReplayInfo) => {
+    if (!info.sessionId) return
+    const { url } = await window.api.invoke('clip:share', info.sessionId, info.fileName, info.label)
+    setShare({ url, qrDataUrl: await QRCode.toDataURL(url, { margin: 1 }) })
+  }, [])
+
+  const stopSharing = useCallback(() => {
+    void window.api.invoke('share:stop')
+    setShare(null)
+  }, [])
+
+  const saveClip = useCallback(async (info: ReplayInfo) => {
+    if (!info.sessionId) return
+    const dest = await window.api.invoke('clip:saveAs', info.sessionId, info.fileName)
+    if (dest) {
+      setSaveNote(`Saved to ${dest}`)
+      setTimeout(() => setSaveNote(null), 4000)
+    }
+  }, [])
+
   const playClip = useCallback(
     async (clip: ClipMeta) => {
       if (!selectedSession) return
@@ -367,7 +412,14 @@ export function App(): React.JSX.Element {
       const url = URL.createObjectURL(new Blob([bytes], { type: 'video/mp4' }))
       setReplay((previous) => {
         if (previous?.objectUrl) URL.revokeObjectURL(previous.url)
-        return { url, label: clip.file, objectUrl: true, cameraId }
+        return {
+          url,
+          label: clip.file,
+          objectUrl: true,
+          cameraId,
+          sessionId: selectedSession,
+          fileName: clip.file
+        }
       })
       busRef.current?.setReplayUrl(url, cameraId)
     },
@@ -457,6 +509,8 @@ export function App(): React.JSX.Element {
                 if (replay.cameraId) updateDrawings(replay.cameraId, shapes, commit)
               }}
               onDismiss={dismissReplay}
+              onShare={() => void shareClip(replay)}
+              onSave={() => void saveClip(replay)}
             />
           ) : cameras.length === 0 ? (
             <div className="empty-stage">
@@ -566,6 +620,27 @@ export function App(): React.JSX.Element {
       )}
 
       {pairing && <PairingDialog pairing={pairing} onCancel={cancelPairing} />}
+
+      {share && <ShareDialog share={share} onStop={stopSharing} onClose={() => setShare(null)} />}
+
+      {saveNote && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 90,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'var(--panel-raised)',
+            border: '1px solid var(--line)',
+            borderRadius: 8,
+            padding: '10px 16px',
+            fontSize: 13,
+            zIndex: 40
+          }}
+        >
+          {saveNote}
+        </div>
+      )}
 
       {showSettings && settings && (
         <SettingsSheet

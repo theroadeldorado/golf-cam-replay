@@ -11,6 +11,12 @@ export interface InvokeChannels {
   'session:clips': { args: [sessionId: string]; result: ClipMeta[] }
   /** Read a clip's MP4 bytes for blob playback. */
   'clip:read': { args: [sessionId: string, fileName: string]; result: ArrayBuffer }
+  /** Copy a clip to a user-chosen path. Resolves to the path, or null if cancelled. */
+  'clip:saveAs': { args: [sessionId: string, fileName: string]; result: string | null }
+  /** Share a clip over the LAN; starts the server if needed. Returns the landing URL. */
+  'clip:share': { args: [sessionId: string, fileName: string, label: string]; result: { url: string } }
+  /** Tear down the share server. */
+  'share:stop': { args: []; result: void }
   /** The session this run is writing into (null until the first clip saves). */
   'session:current': { args: []; result: string | null }
   'clip:save': { args: [request: SaveClipRequest]; result: ClipMeta }

@@ -1,9 +1,13 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { app, ipcMain, BrowserWindow, dialog } from 'electron'
+import { copyFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { EventChannel, EventChannels, InvokeChannel, InvokeChannels } from '@shared/ipc-contract'
 import type { SettingsStore } from './settings-store'
 import type { WindowRegistry } from './windows'
 import { deleteClip, listSessions, pinClip, readClipFile, readClips } from './clip-store'
 import { ClipWriter } from './clip-writer'
+import { ShareServer } from './share-server'
+import { golfDir } from './paths'
 import { log } from './logging'
 
 function handle<C extends InvokeChannel>(
@@ -38,6 +42,34 @@ export function registerIpc(store: SettingsStore, windows: WindowRegistry): void
   handle('session:list', () => listSessions())
   handle('session:clips', (_sender, sessionId) => readClips(sessionId))
   handle('clip:read', (_sender, sessionId, fileName) => readClipFile(sessionId, fileName))
+
+  handle('clip:saveAs', async (senderId, sessionId, fileName) => {
+    const source = join(golfDir(), sessionId, fileName)
+    // Test seam: skip the native dialog when a destination is pre-set.
+    const forced = process.env['REPLAYSWING_SAVEAS_DEST']
+    let dest: string | undefined = forced
+    if (!dest) {
+      const window =
+        BrowserWindow.getAllWindows().find((w) => w.webContents.id === senderId) ??
+        BrowserWindow.getAllWindows()[0]
+      const result = await dialog.showSaveDialog(window, {
+        defaultPath: fileName,
+        filters: [{ name: 'Video', extensions: ['mp4'] }]
+      })
+      if (result.canceled || !result.filePath) return null
+      dest = result.filePath
+    }
+    copyFileSync(source, dest)
+    log.info(`Saved ${fileName} to ${dest}`)
+    return dest
+  })
+
+  const shareServer = new ShareServer(golfDir())
+  handle('clip:share', (_sender, sessionId, fileName, label) =>
+    shareServer.share(sessionId, fileName, label)
+  )
+  handle('share:stop', () => shareServer.stop())
+  app.on('will-quit', () => void shareServer.stop())
   handle('clip:pin', (_sender, sessionId, index, pinned) => pinClip(sessionId, index, pinned))
   handle('clip:delete', (_sender, sessionId, index) => deleteClip(sessionId, index))
 
