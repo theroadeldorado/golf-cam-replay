@@ -19,11 +19,11 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://replayswing.com'),
   title: 'ReplaySwing — Free Swing Capture & Instant Replay for Golf Simulators',
   description:
-    'Record and replay your golf swings automatically. Audio-triggered capture, PiP overlay for simulators, multi-camera support. Free & open source.',
+    'Record and replay your golf swings automatically. Camera-based swing detection — no microphone — PiP overlay for simulators, phone cameras via QR code. Free & open source.',
   openGraph: {
     title: 'ReplaySwing — Free Swing Capture & Instant Replay for Golf Simulators',
     description:
-      'Record and replay your golf swings automatically. Audio-triggered capture, PiP overlay for simulators, multi-camera support. Free & open source.',
+      'Record and replay your golf swings automatically. Camera-based swing detection — no microphone — PiP overlay for simulators, phone cameras via QR code. Free & open source.',
     type: 'website',
     url: 'https://replayswing.com',
     images: [{ url: '/og-image.png', width: 1200, height: 630 }],
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'ReplaySwing — Free Swing Capture & Instant Replay',
     description:
-      'Record and replay your golf swings automatically. Audio-triggered capture, PiP overlay for simulators, multi-camera support. Free & open source.',
+      'Record and replay your golf swings automatically. Camera-based swing detection — no microphone — PiP overlay for simulators, phone cameras via QR code. Free & open source.',
   },
 };
 

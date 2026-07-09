@@ -21,8 +21,8 @@ export default function Hero() {
               <span className="text-gold">Improve Every Shot.</span>
             </h1>
             <p className="mt-6 text-lg md:text-xl text-bronze max-w-lg leading-relaxed">
-              A free, open-source app for Windows that automatically captures your golf swing on impact
-              and replays it instantly — right on top of your simulator.
+              A free, open-source app for Windows that sees your swing, records it automatically,
+              and replays it instantly — right on top of your simulator. No microphone needed.
             </p>
             <div className="mt-8 flex flex-wrap gap-4">
               <a
@@ -65,7 +65,7 @@ export default function Hero() {
                 {/* Controls bar */}
                 <div className="absolute bottom-0 left-0 right-0 bg-neutral-800/90 px-4 py-3 flex items-center gap-3">
                   <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
-                  <span className="text-white/60 text-xs font-mono">ARMED — Listening for impact...</span>
+                  <span className="text-white/60 text-xs font-mono">ARMED — Watching for your swing...</span>
                   <div className="ml-auto flex gap-2">
                     <div className="w-16 h-2 rounded bg-green-accent/60" />
                     <div className="w-8 h-2 rounded bg-gold/40" />

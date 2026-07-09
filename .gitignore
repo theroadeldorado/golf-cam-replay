@@ -2,6 +2,12 @@
 .DS_Store
 Thumbs.db
 
+# Node/test byproducts
+node_modules/
+test-results/
+desktop/screenshots/
+desktop/undefined/
+
 # IDEs
 .vscode/
 .idea/

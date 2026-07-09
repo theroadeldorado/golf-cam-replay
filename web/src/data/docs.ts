@@ -14,26 +14,25 @@ export const docSections: DocSection[] = [
       <h3>Prerequisites</h3>
       <ul>
         <li><strong>Windows 10 or 11</strong></li>
-        <li>A USB webcam <em>or</em> a phone running a camera app (DroidCam, IP Webcam, EpocCam)</li>
-        <li>A microphone (built-in laptop mic, USB mic, or phone mic via DroidCam)</li>
+        <li>A USB webcam <em>or</em> a phone with a camera and a browser &mdash; no phone app needed</li>
       </ul>
+      <p>No microphone required. ReplaySwing watches your swing through the camera itself.</p>
 
       <h3>Installation</h3>
       <ol>
-        <li>Download the latest <code>.exe</code> installer from the <a href="#download">Download section</a> or the <a href="https://github.com/theroadeldorado/replay-swing/releases/latest" target="_blank" rel="noopener noreferrer">GitHub Releases</a> page.</li>
-        <li>Run the installer &mdash; no admin privileges required.</li>
+        <li>Download the installer from the <a href="#download">Download section</a> or the <a href="https://github.com/theroadeldorado/replay-swing/releases/latest" target="_blank" rel="noopener noreferrer">GitHub Releases</a> page.</li>
+        <li>Run <code>ReplaySwing-Setup.exe</code> &mdash; no admin privileges required.</li>
         <li>Launch <strong>ReplaySwing</strong> from the Start Menu or desktop shortcut.</li>
       </ol>
 
       <h3>First Launch</h3>
       <ol>
-        <li>The app auto-detects your first USB camera. If no camera is found, connect one and click <strong>Refresh Cameras</strong> in Settings.</li>
-        <li>Select your microphone from the <strong>Audio Device</strong> dropdown in Settings &mdash; a live level meter starts immediately so you can confirm the right mic is active.</li>
-        <li>Adjust the <strong>Threshold</strong> slider until normal room noise stays blue/yellow and a clap or ball strike pushes the bar into red.</li>
-        <li>Click <strong>Arm</strong> (or press <kbd>A</kbd>) to begin listening for club impact.</li>
-        <li>Take a swing &mdash; the app records automatically and starts looping playback.</li>
+        <li>Click <strong>Add camera</strong> and pick your webcam &mdash; a live preview appears immediately.</li>
+        <li>Click <strong>Arm</strong> (or press <kbd>A</kbd>). The tally strip at the top of the window turns amber: the app is watching.</li>
+        <li>Address the ball and hold still for a beat &mdash; the strip locks green (<strong>SET</strong>).</li>
+        <li>Swing. The app records automatically and loops the replay on screen.</li>
       </ol>
-      <p>Recordings are saved to <code>~/GolfSwings/</code> organized by session timestamp.</p>
+      <p>Recordings are saved to <code>~/GolfSwings/</code>, organized by session timestamp.</p>
     `,
   },
   {
@@ -42,28 +41,19 @@ export const docSections: DocSection[] = [
     iconName: 'Camera',
     content: `
       <h3>USB Cameras</h3>
-      <p>Plug in any USB webcam and the app detects it automatically. ReplaySwing tries multiple capture backends (DSHOW &rarr; MSMF &rarr; default) so most cameras work out of the box.</p>
-      <p>For best results, use a camera that supports <strong>720p or higher</strong> at 30 fps.</p>
+      <p>Plug in any USB webcam and click <strong>Add camera</strong> &mdash; ReplaySwing uses the same camera engine as Chrome, so if your camera works in a browser, it works here. Hot-plug is detected automatically.</p>
+      <p>For best results, use a camera that supports <strong>720p or higher</strong>.</p>
 
       <h3>Multi-Camera Recording</h3>
-      <p>Add cameras in the <strong>Settings</strong> tab. When armed, all cameras record simultaneously from a single audio trigger. Each camera saves a separate file:</p>
+      <p>Add up to four cameras (USB and phones can mix). When a swing triggers, every camera saves its own clip from the same moment:</p>
       <ul>
         <li>Primary: <code>shot_0001.mp4</code></li>
         <li>Secondary: <code>shot_0001_cam1.mp4</code></li>
       </ul>
       <p>The live view auto-layouts cameras: 1 &rarr; full, 2 &rarr; side-by-side, 3&ndash;4 &rarr; 2&times;2 grid.</p>
 
-      <h3>Per-Camera Transforms</h3>
-      <p>Each camera supports individual transforms applied in real time:</p>
-      <table>
-        <thead><tr><th>Transform</th><th>Range</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td>Zoom</td><td>1.0&ndash;4.0&times;</td><td>Center crop with scaling</td></tr>
-          <tr><td>Rotation</td><td>0&deg;&ndash;360&deg;</td><td>Rotate by 90&deg; steps or arbitrary angle</td></tr>
-          <tr><td>Flip Horizontal</td><td>On / Off</td><td>Mirror image left-right</td></tr>
-          <tr><td>Flip Vertical</td><td>On / Off</td><td>Mirror image top-bottom</td></tr>
-        </tbody>
-      </table>
+      <h3>The Trigger Camera</h3>
+      <p>One camera is the <strong>trigger camera</strong> &mdash; the one that watches for your swing. Pick it in Settings. A face-on or down-the-line camera with a clear view of you at address works best.</p>
     `,
   },
   {
@@ -71,180 +61,70 @@ export const docSections: DocSection[] = [
     title: 'Phone as Camera',
     iconName: 'Smartphone',
     content: `
-      <p>Turn any phone into a wireless camera using a free streaming app. No extra hardware needed.</p>
+      <p>Any phone becomes a wireless camera in about ten seconds &mdash; no app to install.</p>
 
-      <h3>Supported Apps</h3>
-      <table>
-        <thead><tr><th>App</th><th>Platform</th><th>Port</th><th>URL Format</th></tr></thead>
-        <tbody>
-          <tr><td><strong>DroidCam</strong></td><td>Android</td><td>4747</td><td><code>http://&lt;ip&gt;:4747/mjpegfeed</code></td></tr>
-          <tr><td><strong>IP Webcam</strong></td><td>Android</td><td>8080</td><td><code>http://&lt;ip&gt;:8080/video</code></td></tr>
-          <tr><td><strong>DroidCam</strong></td><td>iOS</td><td>4747</td><td><code>http://&lt;ip&gt;:4747/video</code></td></tr>
-          <tr><td><strong>EpocCam / Camo</strong></td><td>iOS</td><td>&mdash;</td><td>Appears as USB camera</td></tr>
-          <tr><td><strong>Custom URL</strong></td><td>Any</td><td>&mdash;</td><td>Any MJPEG or RTSP stream</td></tr>
-        </tbody>
-      </table>
-
-      <h3>Setup Steps</h3>
+      <h3>Pairing</h3>
       <ol>
-        <li>Install the camera app on your phone and the desktop companion (if required).</li>
-        <li>Connect your phone and PC to the <strong>same Wi-Fi network</strong>.</li>
-        <li>Start streaming on the phone &mdash; note the IP address shown.</li>
-        <li>In ReplaySwing, go to <strong>Settings &rarr; Add Camera</strong> and enter the URL.</li>
+        <li>Click <strong>Add phone</strong> in ReplaySwing. A QR code appears.</li>
+        <li>Scan it with your phone's camera. The pairing page opens in your phone's browser.</li>
+        <li>Tap <strong>Start camera</strong> and allow camera access.</li>
+        <li>The phone's feed appears in ReplaySwing as a normal camera tile.</li>
       </ol>
 
-      <h3>Tips</h3>
+      <h3>While Connected</h3>
       <ul>
-        <li><strong>DroidCam also provides a virtual microphone</strong> &mdash; useful if your PC doesn&rsquo;t have a mic. The app auto-detects it and labels it &ldquo;(phone mic)&rdquo;.</li>
-        <li>For the most reliable connection, use <strong>5 GHz Wi-Fi</strong> or a USB tether.</li>
-        <li>The app auto-reconnects if the stream drops, with exponential backoff up to 30 seconds.</li>
-        <li><strong>DroidCam single-client limit:</strong> DroidCam only allows one video client at a time. If another app (OBS, browser preview) is connected, close it first. ReplaySwing detects this and reports &ldquo;DroidCam is busy.&rdquo;</li>
+        <li>Keep the pairing page open &mdash; the app keeps your phone's screen awake for you.</li>
+        <li>Use <strong>Flip camera</strong> on the phone to switch between front and back lenses.</li>
+        <li>If the phone locks or drops, ReplaySwing holds its spot and reconnects when the page returns.</li>
       </ul>
+
+      <h3>Requirements</h3>
+      <ul>
+        <li>Phone and PC on the <strong>same Wi-Fi network</strong> (not cellular data).</li>
+        <li>Guest networks often isolate devices from each other &mdash; use your main network.</li>
+      </ul>
+      <p>Video streams directly from your phone to your PC over your local network. It never touches the internet.</p>
     `,
   },
   {
-    id: 'audio-trigger',
-    title: 'Audio Trigger',
-    iconName: 'AudioLines',
-    content: `
-      <p>ReplaySwing listens for the distinctive sound of club impact and triggers recording automatically. Two detection modes are available.</p>
-
-      <h3>Heuristic Classifier (Default)</h3>
-      <p>Hand-tuned rules analyse 12 spectral features of each audio chunk, scoring for characteristics typical of a golf impact:</p>
-      <ul>
-        <li><strong>Crest factor</strong> &mdash; high peak-to-RMS ratio (sharp transient)</li>
-        <li><strong>Impact ratio</strong> &mdash; concentration of energy in the 2&ndash;6 kHz band</li>
-        <li><strong>Rise time</strong> &mdash; fast onset (&lt; 30 samples for strongest signal)</li>
-        <li><strong>Zero-crossing rate</strong> &mdash; 0.05&ndash;0.35 range typical of impacts</li>
-        <li><strong>Spectral centroid</strong> &mdash; 1.5&ndash;5 kHz sweet spot</li>
-      </ul>
-      <p>A low-frequency penalty suppresses false triggers from footsteps or speech.</p>
-
-      <h3>Learned Classifier</h3>
-      <p>Once you&rsquo;ve collected <strong>10+ labeled samples</strong>, the app automatically switches to a RandomForest model trained on your specific environment. This improves accuracy for your room, club type, and mat combination.</p>
-      <p>To train: use the <strong>Mark Not Shot</strong> button to label false positives, and take real swings to accumulate positive samples. The classifier retrains automatically when enough data is available.</p>
-
-      <h3>Live Mic Preview</h3>
-      <p>Selecting a microphone from the <strong>Audio Device</strong> dropdown automatically starts a <strong>live level meter</strong> so you can instantly see which mic is picking up sound. Tap or clap near a mic to confirm it&rsquo;s the right one &mdash; no need to arm the system first.</p>
-      <ul>
-        <li>The level bar changes colour as audio approaches the threshold: <strong>blue</strong> (quiet) &rarr; <strong>yellow</strong> (approaching) &rarr; <strong>red</strong> (above threshold &mdash; would trigger when armed).</li>
-        <li>Adjust the <strong>Threshold</strong> slider while watching the bar to dial in the right sensitivity for your room.</li>
-        <li>The preview stops automatically when you <strong>Arm</strong> the system (the main audio detector takes over).</li>
-        <li>Click <strong>Stop</strong> to manually end the preview at any time.</li>
-      </ul>
-
-      <h3>Threshold Tuning</h3>
-      <p>The <strong>sensitivity slider</strong> (1&ndash;100%) controls how confident the classifier must be before triggering. Lower values trigger more easily (more false positives); higher values are more selective.</p>
-      <ul>
-        <li>Default: <strong>30%</strong></li>
-        <li>If you get too many false triggers, increase the threshold.</li>
-        <li>If real swings are missed, decrease the threshold or check mic placement.</li>
-      </ul>
-
-      <h3>Device Persistence</h3>
-      <p>Your selected microphone and threshold are <strong>saved automatically</strong> and restored when you reopen the app. The device is matched by name, so it survives reboots and USB re-plugging even if system device indices change.</p>
-
-      <h3>Microphone Tips</h3>
-      <ul>
-        <li>Point the mic toward the hitting area, 3&ndash;6 feet away.</li>
-        <li>Avoid placing the mic near speakers or HVAC vents.</li>
-        <li>A phone mic via DroidCam works well &mdash; place the phone near the tee.</li>
-      </ul>
-    `,
-  },
-  {
-    id: 'recording',
-    title: 'Recording',
+    id: 'vision-trigger',
+    title: 'Swing Detection',
     iconName: 'Circle',
     content: `
-      <h3>Arm &amp; Disarm</h3>
-      <p>Press <kbd>A</kbd> or click the <strong>Arm</strong> button to start listening for triggers. While armed, the status bar shows a pulsing red indicator and "Listening for impact&hellip;"</p>
+      <p>ReplaySwing detects swings by <em>watching</em>, not listening. No microphone, no impact sound tuning.</p>
+
+      <h3>How It Works</h3>
+      <p>A golf swing has an unmistakable motion signature: you settle into address and hold still, then move fast. When armed, the app looks for exactly that sequence on the trigger camera:</p>
+      <ol>
+        <li><strong>WATCHING</strong> (amber) &mdash; armed, waiting for you to address the ball.</li>
+        <li><strong>SET</strong> (green) &mdash; you've been still for a moment; the trigger is live.</li>
+        <li><strong>CAPTURE</strong> (red) &mdash; swing detected; the clip is being saved.</li>
+      </ol>
+      <p>The tally strip across the top of the window shows the current state, readable from across the bay. Walking through the frame or a practice waggle won't fire it &mdash; only a still address followed by a swing.</p>
+
+      <h3>Sensitivity</h3>
+      <p>The detector calibrates itself to your camera and lighting automatically. If it misses soft swings (or fires too eagerly), adjust <strong>Trigger sensitivity</strong> in Settings: Low needs a hard swing, High fires on chips and putts.</p>
 
       <h3>Manual Trigger</h3>
-      <p>Press <kbd>T</kbd> to force a recording at any time, even when armed. Useful for testing or capturing without audio (e.g., putting).</p>
-
-      <h3>Pre-Buffer &amp; Post-Trigger Timing</h3>
-      <p>The app maintains a <strong>circular frame buffer</strong> so it can retroactively capture video from <em>before</em> you swung:</p>
-      <table>
-        <thead><tr><th>Setting</th><th>Default</th><th>Range</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td>Pre-trigger</td><td>1.0 s</td><td>0.5&ndash;30 s</td><td>Seconds of video kept before the trigger</td></tr>
-          <tr><td>Post-trigger</td><td>2.0 s</td><td>0.5&ndash;30 s</td><td>Seconds of video captured after the trigger</td></tr>
-          <tr><td>FPS</td><td>30</td><td>1&ndash;120</td><td>Recording frame rate</td></tr>
-        </tbody>
-      </table>
-      <p><strong>Example:</strong> With defaults, each clip is (1 + 2) &times; 30 = 90 frames &asymp; 3 seconds.</p>
-
-      <h3>What Happens on Trigger</h3>
-      <ol>
-        <li>Audio or manual trigger fires.</li>
-        <li>The pre-buffer (last 1 s of frames) is frozen.</li>
-        <li>Post-trigger frames are appended for 2 s.</li>
-        <li>The clip is saved as <code>shot_NNNN.mp4</code> with a thumbnail.</li>
-        <li>Playback starts looping automatically.</li>
-        <li>The system stays armed for the next shot.</li>
-      </ol>
+      <p>The <strong>Record now</strong> button (or <kbd>T</kbd>) captures the last few seconds at any moment, armed or not &mdash; the buffer is always running while cameras are live.</p>
     `,
   },
   {
-    id: 'playback',
-    title: 'Playback',
+    id: 'recording-replay',
+    title: 'Recording & Replay',
     iconName: 'Play',
     content: `
-      <h3>Looping Replay</h3>
-      <p>After each shot, the captured clip <strong>loops continuously</strong> until the next trigger or until you manually pause. This lets you study your swing on repeat without touching any controls.</p>
+      <h3>Pre-Roll Buffer</h3>
+      <p>ReplaySwing continuously buffers every camera in memory, so a trigger saves footage from <em>before</em> the moment it fired &mdash; your full backswing is always in the clip. Defaults: <strong>2s before</strong> and <strong>4s after</strong> the trigger, adjustable in Settings.</p>
 
-      <h3>Speed Control</h3>
-      <p>Use the speed selector or keyboard shortcuts to change playback speed:</p>
-      <table>
-        <thead><tr><th>Speed</th><th>Shortcut</th><th>Use Case</th></tr></thead>
-        <tbody>
-          <tr><td>0.25&times;</td><td><kbd>[</kbd> to decrease</td><td>Ultra slow-mo for fine detail</td></tr>
-          <tr><td>0.5&times;</td><td></td><td>Slow motion</td></tr>
-          <tr><td>0.75&times;</td><td></td><td>Slightly slowed</td></tr>
-          <tr><td>1.0&times;</td><td></td><td>Real-time</td></tr>
-          <tr><td>1.5&times;</td><td></td><td>Quick review</td></tr>
-          <tr><td>2.0&times;</td><td><kbd>]</kbd> to increase</td><td>Fast scan</td></tr>
-        </tbody>
-      </table>
+      <h3>Instant Replay</h3>
+      <p>The moment a clip saves, it takes over the main view and loops. You stay armed the whole time &mdash; step up and hit the next ball, and the new swing replaces the replay. Press <kbd>Esc</kbd> or click <strong>Back to live</strong> to return to the camera view.</p>
 
-      <h3>Frame Stepping</h3>
-      <p>Pause playback (press <kbd>Space</kbd>), then use <kbd>&larr;</kbd> and <kbd>&rarr;</kbd> to move one frame at a time. This is ideal for analysing exact positions at key moments &mdash; address, top of backswing, impact, and follow-through.</p>
+      <h3>Slow Motion</h3>
+      <p>Drag the speed slider on the replay bar from <strong>1&times;</strong> down to <strong>0.1&times;</strong> to study the moment through impact in slow motion. It works on the instant replay and on any shot you pick from the rail.</p>
 
-      <h3>Multi-Camera View</h3>
-      <p>When recording with 2+ cameras, toggle between single-camera and grid view. An angle bar lets you switch between camera perspectives (e.g., "Down-the-Line" vs "Face-On").</p>
-    `,
-  },
-  {
-    id: 'pip',
-    title: 'Picture-in-Picture',
-    iconName: 'PictureInPicture2',
-    content: `
-      <h3>Overview</h3>
-      <p>The PiP window is a frameless, always-on-top overlay that floats your swing replay over any application &mdash; your simulator software, launch monitor, or any full-screen app. No alt-tabbing needed.</p>
-
-      <h3>Opening PiP</h3>
-      <p>Press <kbd>P</kbd> or click the <strong>PiP</strong> button. The overlay appears at its last saved position (default: top-left corner, 480&times;270 px).</p>
-
-      <h3>Controls</h3>
-      <table>
-        <thead><tr><th>Action</th><th>How</th></tr></thead>
-        <tbody>
-          <tr><td>Move</td><td>Drag anywhere on the window</td></tr>
-          <tr><td>Resize</td><td>Drag the window edges or corners</td></tr>
-          <tr><td>Zoom</td><td>Scroll wheel to zoom in (up to 5&times;) or out &mdash; center-crops the frame</td></tr>
-          <tr><td>Close</td><td>Click the &times; button or press <kbd>P</kbd> again</td></tr>
-        </tbody>
-      </table>
-
-      <h3>Behaviour</h3>
-      <ul>
-        <li>Plays the same clip as the main window, at the same speed.</li>
-        <li>Loops automatically alongside the main player.</li>
-        <li><strong>Drawing overlays</strong> (lines, circles) are rendered directly on the PiP video so annotations are always visible.</li>
-        <li>Position and size are saved to settings and restored on next launch.</li>
-        <li>Works with any simulator: GSPro, TGC 2019, E6 Connect, Awesome Golf, etc.</li>
-      </ul>
+      <h3>Files</h3>
+      <p>Clips are H.264 MP4s that play anywhere &mdash; Windows, phones, editing apps. Each session gets a folder in <code>~/GolfSwings/</code> with per-camera MP4s, JPG thumbnails, and a <code>clips.json</code> index.</p>
     `,
   },
   {
@@ -252,150 +132,91 @@ export const docSections: DocSection[] = [
     title: 'Drawing Tools',
     iconName: 'PenTool',
     content: `
-      <h3>Available Tools</h3>
-      <table>
-        <thead><tr><th>Tool</th><th>Shortcut</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td>Select</td><td><kbd>1</kbd></td><td>Click to select shapes, drag to move, grab handles to resize or rotate</td></tr>
-          <tr><td>Line</td><td><kbd>2</kbd></td><td>Draw lines for swing plane, shaft angle, or alignment analysis</td></tr>
-          <tr><td>Circle</td><td><kbd>3</kbd></td><td>Mark key positions &mdash; club head, ball, joints</td></tr>
-        </tbody>
-      </table>
+      <p>Mark up any swing with lines and circles &mdash; a swing-plane line, an alignment circle on the ball or your head.</p>
 
       <h3>Drawing</h3>
       <ol>
-        <li>Select a tool (Line or Circle) from the Drawing tab or press <kbd>2</kbd>/<kbd>3</kbd>.</li>
-        <li>Click and drag on the video frame to create the shape.</li>
-        <li>Use the colour picker to change the shape colour.</li>
-        <li>Shapes are drawn using <strong>normalised coordinates</strong> (0.0&ndash;1.0), so they scale correctly when the window resizes.</li>
+        <li>Click the <strong>pencil</strong> at the top-left of the video.</li>
+        <li>Pick <strong>Line</strong> or <strong>Circle</strong> and a color, then drag on the video.</li>
+        <li>Switch to <strong>Select</strong> to move a shape, drag a line&rsquo;s ends to re-angle it, or drag a circle&rsquo;s edge to resize. A swatch recolors the selected shape; <kbd>Delete</kbd> removes it.</li>
       </ol>
 
-      <h3>Editing Shapes</h3>
-      <ul>
-        <li>Switch to the <strong>Select</strong> tool (<kbd>1</kbd>) to interact with existing shapes.</li>
-        <li><strong>Move:</strong> Click and drag a shape.</li>
-        <li><strong>Resize:</strong> Drag the endpoint handles (lines) or the radius handle (circles).</li>
-        <li><strong>Rotate lines:</strong> Drag the yellow rotation handle perpendicular to the line.</li>
-        <li><strong>Delete:</strong> Select a shape, then press <kbd>Delete</kbd>.</li>
-        <li><strong>Deselect:</strong> Press <kbd>Escape</kbd> to clear the selection.</li>
-      </ul>
-
-      <h3>Persistence</h3>
-      <p>All drawing overlays are saved per-session in <code>settings.json</code> and restored when you reopen the app.</p>
+      <h3>Where drawings live</h3>
+      <p>Drawings belong to each camera and are saved between sessions. They appear on that camera&rsquo;s live view, on its replays, and burned into the PiP overlay on your sim screen. Turn the pencil off and they stay on screen without getting in the way.</p>
     `,
   },
   {
-    id: 'swing-comparison',
-    title: 'Swing Comparison',
+    id: 'compare-swings',
+    title: 'Compare Swings',
     iconName: 'Columns2',
     content: `
-      <h3>Overview</h3>
-      <p>Compare two swings side-by-side with synchronised playback. This is invaluable for tracking improvement over time or comparing different clubs and techniques.</p>
+      <p>Put two swings side by side to see what changed &mdash; today&rsquo;s move against a reference from last week.</p>
 
-      <h3>Opening the Comparison View</h3>
-      <p>Right-click a clip thumbnail in the Gallery and choose <strong>Compare</strong>, or use the comparison button in the main window. A new dialog opens with two video players.</p>
+      <h3>Opening a comparison</h3>
+      <ol>
+        <li>Click <strong>Compare</strong> in the toolbar. A window opens with two panes.</li>
+        <li>Use the dropdown above each pane to pick a shot. Shots are grouped by session, so you can compare across different days.</li>
+      </ol>
 
-      <h3>Controls</h3>
-      <table>
-        <thead><tr><th>Control</th><th>Function</th></tr></thead>
-        <tbody>
-          <tr><td>Left / Right clip selectors</td><td>Choose which clips to compare</td></tr>
-          <tr><td>Angle selectors</td><td>Pick camera angle per side (primary, secondary, etc.)</td></tr>
-          <tr><td>Play / Pause</td><td>Synchronised playback of both clips</td></tr>
-          <tr><td>Playback slider</td><td>Scrub both clips together</td></tr>
-          <tr><td>Speed selector</td><td>Adjust playback speed for both clips</td></tr>
-        </tbody>
-      </table>
+      <h3>Studying the swings</h3>
+      <ul>
+        <li>Both clips play on one timeline &mdash; play/pause, scrub, and slow-motion speeds apply to both at once.</li>
+        <li>Step through frame by frame with the frame buttons.</li>
+        <li>The two swings rarely start at the same instant, so use the <strong>offset</strong> (&minus; / &plus;) to nudge the right swing until both line up at the same moment &mdash; the top of the backswing, or impact.</li>
+      </ul>
+    `,
+  },
+  {
+    id: 'share-save',
+    title: 'Share & Save',
+    iconName: 'Share2',
+    content: `
+      <p>Get any clip off your PC without cables or cloud uploads. Both buttons sit on the replay bar.</p>
 
-      <h3>Frame Offset</h3>
-      <p>Swings rarely start at exactly the same moment. Use the <strong>&minus;5 / +5</strong> frame offset buttons on each side to fine-tune alignment &mdash; for example, sync both clips to the moment of impact.</p>
-      <p>The current offset is displayed as "Offset: X frames" for each clip.</p>
+      <h3>Send to your phone</h3>
+      <ol>
+        <li>Play a shot, click <strong>Share</strong>, and a QR code appears.</li>
+        <li>Scan it with your phone&rsquo;s camera &mdash; a page opens that plays the swing with a Save button.</li>
+        <li>Share more shots and they appear on the same page automatically, so you only scan once.</li>
+      </ol>
+      <p>Your phone must be on the <strong>same Wi-Fi</strong> as your PC. The video streams directly between them and never touches the internet. On iPhone, long-press the video and choose &ldquo;Save to Photos&rdquo;; on Android, use the Save button.</p>
+
+      <h3>Save to your PC</h3>
+      <p>Click <strong>Save</strong> to copy the clip anywhere on your computer &mdash; to a coaching folder, a USB drive, or your desktop.</p>
+    `,
+  },
+  {
+    id: 'pip',
+    title: 'PiP Overlay',
+    iconName: 'PictureInPicture2',
+    content: `
+      <p>The PiP window floats on top of everything &mdash; including your fullscreen simulator &mdash; and mirrors whatever ReplaySwing is showing: live cameras between shots, the looping replay after each swing.</p>
+
+      <h3>Using It</h3>
+      <ul>
+        <li>Click <strong>PiP</strong> in the toolbar (or press <kbd>P</kbd>) to open or close it.</li>
+        <li>Drag it anywhere on the sim screen; resize from the edges.</li>
+        <li>Its position and size are remembered between sessions.</li>
+      </ul>
+      <p>Because it mirrors the main app, there's nothing to configure &mdash; arm once, and every replay appears over your simulator automatically.</p>
     `,
   },
   {
     id: 'session-management',
-    title: 'Session Management',
+    title: 'Sessions & Shots',
     iconName: 'FolderOpen',
     content: `
-      <h3>Session Folders</h3>
-      <p>Each session is stored in a timestamped folder under <code>~/GolfSwings/</code>:</p>
-      <pre><code>GolfSwings/
-├── 2026-02-01_14-30-00/
-│   ├── shot_0001.mp4
-│   ├── shot_0001_cam1.mp4
-│   ├── shot_0001.jpg          (thumbnail)
-│   ├── shot_0002.mp4
-│   ├── shot_0002.jpg
-│   └── clips.json             (metadata)
-└── 2026-02-01_16-45-00/
-    └── ...</code></pre>
-      <p>A new session folder is created automatically when the app launches. Click <strong>New Session</strong> to start a fresh folder mid-session.</p>
+      <h3>The Shot Rail</h3>
+      <p>Every capture lands in the rail on the right with a thumbnail, shot number, and time. Click any shot to replay it on the main stage.</p>
 
-      <h3>Session Browser</h3>
-      <p>The <strong>Sessions</strong> panel in the right sidebar lists all past sessions sorted newest-first, showing the date and shot count for each. Click any session to switch to it instantly &mdash; the gallery reloads with that session&rsquo;s clips.</p>
-
-      <h3>Configurable Save Location</h3>
-      <p>By default, sessions are saved to <code>~/GolfSwings/</code>. To change this, go to <strong>Settings &rarr; Save Location</strong> and click <strong>Change...</strong> to pick a new folder. A new session is started automatically at the new location.</p>
-
-      <h3>Clip Gallery</h3>
-      <p>The <strong>Gallery</strong> tab shows thumbnail previews of every clip in the current session. Click a thumbnail to load the clip for playback.</p>
-
-      <h3>Managing Clips</h3>
-      <table>
-        <thead><tr><th>Action</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td>Pin Shot</td><td>Mark a clip as a favorite &mdash; a gold star appears on the thumbnail</td></tr>
-          <tr><td>Share to Phone</td><td>Generate a QR code to download the clip on your phone</td></tr>
-          <tr><td>Delete</td><td>Remove the clip and all associated files (with confirmation dialog)</td></tr>
-          <tr><td>Mark Not Shot</td><td>Deletes the video but keeps the audio sample for classifier training</td></tr>
-          <tr><td>Open Folder</td><td>Opens the session directory in Windows Explorer</td></tr>
-        </tbody>
-      </table>
-
-      <h3>Thumbnails</h3>
-      <p>Thumbnails are auto-generated from approximately one-third through each clip, giving a representative frame of the swing. They are saved as <code>shot_NNNN.jpg</code> alongside the video.</p>
-    `,
-  },
-  {
-    id: 'pin-favorite',
-    title: 'Pin / Favorite Shots',
-    iconName: 'Star',
-    content: `
-      <h3>Pinning Clips</h3>
-      <p>Right-click any clip thumbnail in the Gallery and select <strong>Pin Shot</strong> to mark it as a favorite. A gold star (&#9733;) appears on the thumbnail and in the clip label.</p>
-
-      <h3>Using Pinned Clips</h3>
+      <h3>Pin & Delete</h3>
       <ul>
-        <li><strong>Comparison view:</strong> When you open the Swing Comparison dialog, pinned clips are automatically pre-selected in the left and right dropdowns &mdash; no scrolling through dozens of shots.</li>
-        <li><strong>Quick identification:</strong> Pinned clips show a star prefix in all dropdown selectors.</li>
+        <li>Hover a shot and click <strong>&#9734;</strong> to pin your best swings.</li>
+        <li>Hover and click <strong>&#10005;</strong> to delete a mishit &mdash; the video files go with it.</li>
       </ul>
 
-      <h3>Unpinning</h3>
-      <p>Right-click the pinned thumbnail again and select <strong>Unpin Shot</strong>. The pin state is saved in <code>clips.json</code> and persists across sessions.</p>
-    `,
-  },
-  {
-    id: 'qr-share',
-    title: 'Share to Phone',
-    iconName: 'QrCode',
-    content: `
-      <h3>Overview</h3>
-      <p>Share any recorded clip directly to your phone without cables, cloud uploads, or third-party apps. The app starts a temporary local web server and generates a QR code that your phone can scan to download the MP4.</p>
-
-      <h3>How to Share</h3>
-      <ol>
-        <li>Right-click a clip thumbnail and select <strong>Share to Phone</strong>, or click the <strong>Share</strong> button in the playback controls.</li>
-        <li>A dialog appears with a QR code and the local URL.</li>
-        <li>Open your phone&rsquo;s camera and scan the QR code (make sure your phone is on the same WiFi network).</li>
-        <li>The video downloads directly to your phone.</li>
-        <li>Close the dialog when done &mdash; the temporary server stops automatically.</li>
-      </ol>
-
-      <h3>Requirements</h3>
-      <ul>
-        <li>Your phone and PC must be on the <strong>same WiFi network</strong>.</li>
-        <li>The <code>qrcode</code> Python package must be installed (included in the default installer). If missing, the URL is still shown as copyable text.</li>
-      </ul>
+      <h3>Sessions</h3>
+      <p>Each app run records into a new session folder named by date and time. Use the dropdown at the top of the rail to browse earlier sessions &mdash; including ones recorded with older versions of ReplaySwing.</p>
     `,
   },
   {
@@ -403,24 +224,14 @@ export const docSections: DocSection[] = [
     title: 'Keyboard Shortcuts',
     iconName: 'Keyboard',
     content: `
-      <p>Press <kbd>?</kbd> at any time to show the shortcuts help dialog within the app.</p>
       <table>
         <thead><tr><th>Key</th><th>Action</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Space</kbd></td><td>Play / Pause playback</td></tr>
-          <tr><td><kbd>&larr;</kbd></td><td>Step back one frame</td></tr>
-          <tr><td><kbd>&rarr;</kbd></td><td>Step forward one frame</td></tr>
-          <tr><td><kbd>A</kbd></td><td>Toggle armed (start/stop listening for triggers)</td></tr>
-          <tr><td><kbd>T</kbd></td><td>Manual trigger (force a recording)</td></tr>
-          <tr><td><kbd>[</kbd></td><td>Decrease playback speed</td></tr>
-          <tr><td><kbd>]</kbd></td><td>Increase playback speed</td></tr>
-          <tr><td><kbd>P</kbd></td><td>Toggle Picture-in-Picture overlay</td></tr>
-          <tr><td><kbd>1</kbd></td><td>Select tool (drawing)</td></tr>
-          <tr><td><kbd>2</kbd></td><td>Line tool (drawing)</td></tr>
-          <tr><td><kbd>3</kbd></td><td>Circle tool (drawing)</td></tr>
-          <tr><td><kbd>Delete</kbd></td><td>Delete selected drawing shape</td></tr>
-          <tr><td><kbd>Escape</kbd></td><td>Deselect drawing / cancel mode</td></tr>
-          <tr><td><kbd>?</kbd></td><td>Show keyboard shortcuts help</td></tr>
+          <tr><td><kbd>A</kbd></td><td>Arm / disarm the swing trigger</td></tr>
+          <tr><td><kbd>T</kbd></td><td>Record now (manual trigger)</td></tr>
+          <tr><td><kbd>P</kbd></td><td>Show / hide the PiP overlay</td></tr>
+          <tr><td><kbd>Delete</kbd></td><td>Remove the selected drawing (while drawing)</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Exit drawing, dismiss replay, or close the compare window</td></tr>
         </tbody>
       </table>
     `,
@@ -430,54 +241,16 @@ export const docSections: DocSection[] = [
     title: 'Settings',
     iconName: 'Settings',
     content: `
-      <h3>Configuration File</h3>
-      <p>All settings are stored in <code>~/GolfSwings/settings.json</code> and auto-saved whenever you change a setting. The file is written atomically (temp file then rename) to prevent corruption.</p>
-
-      <h3>Recording Settings</h3>
       <table>
-        <thead><tr><th>Option</th><th>Default</th><th>Range</th><th>Description</th></tr></thead>
+        <thead><tr><th>Setting</th><th>Range</th><th>What it does</th></tr></thead>
         <tbody>
-          <tr><td>Pre-trigger seconds</td><td>1.0</td><td>0.5&ndash;30.0</td><td>How far back in time to capture</td></tr>
-          <tr><td>Post-trigger seconds</td><td>2.0</td><td>0.5&ndash;30.0</td><td>How long to keep recording after trigger</td></tr>
-          <tr><td>FPS</td><td>30</td><td>1&ndash;120</td><td>Recording frame rate</td></tr>
+          <tr><td>Pre-roll</td><td>0.5&ndash;5s</td><td>Seconds kept from before the trigger &mdash; covers your backswing</td></tr>
+          <tr><td>Post-roll</td><td>1&ndash;8s</td><td>Seconds recorded after the trigger &mdash; covers the finish and ball flight</td></tr>
+          <tr><td>Trigger sensitivity</td><td>Low / Medium / High</td><td>How hard a motion spike must be to fire</td></tr>
+          <tr><td>Trigger camera</td><td>Any camera</td><td>Which camera watches for the swing</td></tr>
         </tbody>
       </table>
-
-      <h3>Audio Settings</h3>
-      <table>
-        <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td>Audio device</td><td>System default</td><td>Microphone input to use for trigger detection (saved by name across reboots)</td></tr>
-          <tr><td>Threshold</td><td>30%</td><td>Detection sensitivity (1&ndash;100%). Use the live level meter to calibrate.</td></tr>
-          <tr><td>Sample rate</td><td>44,100 Hz</td><td>Audio sampling frequency</td></tr>
-          <tr><td>Chunk size</td><td>1,024</td><td>Audio buffer size</td></tr>
-        </tbody>
-      </table>
-
-      <h3>Display Settings</h3>
-      <table>
-        <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td>PiP size</td><td>480 &times; 270</td><td>Picture-in-Picture window dimensions</td></tr>
-          <tr><td>PiP position</td><td>(100, 100)</td><td>PiP initial screen position</td></tr>
-          <tr><td>Thumbnail size</td><td>160 &times; 90</td><td>Gallery thumbnail dimensions</td></tr>
-          <tr><td>Window geometry</td><td>Auto</td><td>Main window position/size (auto-saved on exit)</td></tr>
-        </tbody>
-      </table>
-
-      <h3>Save Location</h3>
-      <p>The <strong>Save Location</strong> setting lets you choose where all sessions, training data, and logs are stored. The default is <code>~/GolfSwings/</code>. Click <strong>Change...</strong> to pick a different folder (e.g., an external drive).</p>
-
-      <h3>File Locations</h3>
-      <table>
-        <thead><tr><th>Path</th><th>Contents</th></tr></thead>
-        <tbody>
-          <tr><td><code>~/GolfSwings/settings.json</code></td><td>All configuration (always in default location)</td></tr>
-          <tr><td><code>&lt;save_location&gt;/&lt;timestamp&gt;/</code></td><td>Session recordings</td></tr>
-          <tr><td><code>&lt;save_location&gt;/training_data/</code></td><td>Audio samples for classifier</td></tr>
-          <tr><td><code>&lt;save_location&gt;/logs/</code></td><td>Rotating log files (5 MB &times; 5 backups)</td></tr>
-        </tbody>
-      </table>
+      <p>Settings save automatically to <code>~/GolfSwings/settings.v2.json</code>. Window and PiP positions are remembered too.</p>
     `,
   },
   {
@@ -485,47 +258,32 @@ export const docSections: DocSection[] = [
     title: 'Troubleshooting',
     iconName: 'LifeBuoy',
     content: `
-      <h3>Camera Issues</h3>
-      <table>
-        <thead><tr><th>Problem</th><th>Solution</th></tr></thead>
-        <tbody>
-          <tr><td>No camera detected</td><td>Check USB connection, then click <strong>Refresh Cameras</strong> in Settings. Try a different USB port.</td></tr>
-          <tr><td>Black/frozen feed</td><td>Close other apps using the camera (Zoom, Teams, OBS). Restart the app.</td></tr>
-          <tr><td>Low frame rate</td><td>Lower the resolution in your camera&rsquo;s software, or reduce the FPS setting in ReplaySwing.</td></tr>
-          <tr><td>Network camera won&rsquo;t connect</td><td>Verify phone and PC are on the same Wi-Fi. Check the IP and port. Ensure the streaming app is running.</td></tr>
-          <tr><td>DroidCam connects briefly then drops</td><td>Close any other app using DroidCam (OBS, browser, DroidCam client). DroidCam only allows one video client at a time.</td></tr>
-          <tr><td>Network camera keeps dropping</td><td>Switch to 5 GHz Wi-Fi or use a USB tether. The app reconnects automatically with up to 30 s backoff.</td></tr>
-        </tbody>
-      </table>
-
-      <h3>Audio Issues</h3>
-      <table>
-        <thead><tr><th>Problem</th><th>Solution</th></tr></thead>
-        <tbody>
-          <tr><td>No audio device listed</td><td>Connect a microphone and click <strong>Refresh Devices</strong>. For DroidCam, make sure the desktop client is installed.</td></tr>
-          <tr><td>Too many false triggers</td><td>Increase the threshold slider. Move the mic away from speakers and fans.</td></tr>
-          <tr><td>Swings aren&rsquo;t detected</td><td>Use the live level meter to confirm the correct mic is selected &mdash; clap near it and check the bar moves. Decrease the threshold so ball strikes push the bar into red. Move the mic closer to the hitting area.</td></tr>
-          <tr><td>PyAudio not installed</td><td>Audio triggering requires PyAudio. If running from source, install it with: <code>pip install pyaudio</code>. On Windows you may need: <code>pip install pipwin &amp;&amp; pipwin install pyaudio</code>. The app still works without it &mdash; use manual trigger (<kbd>T</kbd>) instead.</td></tr>
-        </tbody>
-      </table>
-
-      <h3>Video &amp; Playback Issues</h3>
-      <table>
-        <thead><tr><th>Problem</th><th>Solution</th></tr></thead>
-        <tbody>
-          <tr><td>Choppy playback</td><td>Reduce the playback speed or lower the recording FPS. Close resource-heavy apps.</td></tr>
-          <tr><td>Clip too short / too long</td><td>Adjust the pre-trigger and post-trigger times in Settings.</td></tr>
-          <tr><td>PiP not visible</td><td>Press <kbd>P</kbd> to toggle PiP. If it&rsquo;s off-screen, delete the <code>pip_position</code> entry in <code>settings.json</code> and restart.</td></tr>
-          <tr><td>Drawings disappeared</td><td>Drawing overlays are saved per-session. Check that the correct session is loaded.</td></tr>
-        </tbody>
-      </table>
-
-      <h3>General</h3>
+      <h3>The trigger doesn't fire</h3>
       <ul>
-        <li><strong>Check the logs</strong> &mdash; the Log tab shows real-time messages. Log files are saved in <code>~/GolfSwings/logs/</code>.</li>
-        <li><strong>Reset settings</strong> &mdash; delete <code>~/GolfSwings/settings.json</code> to restore all defaults.</li>
-        <li><strong>Report a bug</strong> &mdash; use the <a href="#bug-report">bug report form</a> or open an issue on <a href="https://github.com/theroadeldorado/replay-swing/issues" target="_blank" rel="noopener noreferrer">GitHub</a>.</li>
+        <li>Check the tally strip: it must reach green (<strong>SET</strong>) before a swing counts. Hold still at address for about a second.</li>
+        <li>Raise <strong>Trigger sensitivity</strong> in Settings.</li>
+        <li>Make sure the <strong>trigger camera</strong> actually sees you &mdash; check which camera is selected in Settings.</li>
       </ul>
+
+      <h3>It fires when it shouldn't</h3>
+      <ul>
+        <li>Lower the sensitivity.</li>
+        <li>Point the trigger camera so people walking behind you aren't in frame.</li>
+      </ul>
+
+      <h3>Phone won't connect</h3>
+      <ul>
+        <li>Phone and PC must be on the <strong>same Wi-Fi</strong>. Turn off cellular data to be sure.</li>
+        <li>Guest and hotel-style networks often block devices from seeing each other.</li>
+        <li>Re-scan the QR code &mdash; pairing codes expire after a few minutes.</li>
+      </ul>
+
+      <h3>Capture problems on a specific PC</h3>
+      <p>Run the built-in hardware check from Command Prompt and include its output in a bug report:</p>
+      <pre><code>"%LOCALAPPDATA%\\Programs\\ReplaySwing\\ReplaySwing.exe" --spike=encode</code></pre>
+
+      <h3>Reporting bugs</h3>
+      <p>Use the <a href="/#support">bug report form</a> &mdash; logs live in <code>~/GolfSwings/logs/</code> if you want to attach detail.</p>
     `,
   },
 ];
