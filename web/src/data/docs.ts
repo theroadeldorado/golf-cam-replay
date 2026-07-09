@@ -120,8 +120,69 @@ export const docSections: DocSection[] = [
       <h3>Instant Replay</h3>
       <p>The moment a clip saves, it takes over the main view and loops. You stay armed the whole time &mdash; step up and hit the next ball, and the new swing replaces the replay. Press <kbd>Esc</kbd> or click <strong>Back to live</strong> to return to the camera view.</p>
 
+      <h3>Slow Motion</h3>
+      <p>Drag the speed slider on the replay bar from <strong>1&times;</strong> down to <strong>0.1&times;</strong> to study the moment through impact in slow motion. It works on the instant replay and on any shot you pick from the rail.</p>
+
       <h3>Files</h3>
       <p>Clips are H.264 MP4s that play anywhere &mdash; Windows, phones, editing apps. Each session gets a folder in <code>~/GolfSwings/</code> with per-camera MP4s, JPG thumbnails, and a <code>clips.json</code> index.</p>
+    `,
+  },
+  {
+    id: 'drawing-tools',
+    title: 'Drawing Tools',
+    iconName: 'PenTool',
+    content: `
+      <p>Mark up any swing with lines and circles &mdash; a swing-plane line, an alignment circle on the ball or your head.</p>
+
+      <h3>Drawing</h3>
+      <ol>
+        <li>Click the <strong>pencil</strong> at the top-left of the video.</li>
+        <li>Pick <strong>Line</strong> or <strong>Circle</strong> and a color, then drag on the video.</li>
+        <li>Switch to <strong>Select</strong> to move a shape, drag a line&rsquo;s ends to re-angle it, or drag a circle&rsquo;s edge to resize. A swatch recolors the selected shape; <kbd>Delete</kbd> removes it.</li>
+      </ol>
+
+      <h3>Where drawings live</h3>
+      <p>Drawings belong to each camera and are saved between sessions. They appear on that camera&rsquo;s live view, on its replays, and burned into the PiP overlay on your sim screen. Turn the pencil off and they stay on screen without getting in the way.</p>
+    `,
+  },
+  {
+    id: 'compare-swings',
+    title: 'Compare Swings',
+    iconName: 'Columns2',
+    content: `
+      <p>Put two swings side by side to see what changed &mdash; today&rsquo;s move against a reference from last week.</p>
+
+      <h3>Opening a comparison</h3>
+      <ol>
+        <li>Click <strong>Compare</strong> in the toolbar. A window opens with two panes.</li>
+        <li>Use the dropdown above each pane to pick a shot. Shots are grouped by session, so you can compare across different days.</li>
+      </ol>
+
+      <h3>Studying the swings</h3>
+      <ul>
+        <li>Both clips play on one timeline &mdash; play/pause, scrub, and slow-motion speeds apply to both at once.</li>
+        <li>Step through frame by frame with the frame buttons.</li>
+        <li>The two swings rarely start at the same instant, so use the <strong>offset</strong> (&minus; / &plus;) to nudge the right swing until both line up at the same moment &mdash; the top of the backswing, or impact.</li>
+      </ul>
+    `,
+  },
+  {
+    id: 'share-save',
+    title: 'Share & Save',
+    iconName: 'Share2',
+    content: `
+      <p>Get any clip off your PC without cables or cloud uploads. Both buttons sit on the replay bar.</p>
+
+      <h3>Send to your phone</h3>
+      <ol>
+        <li>Play a shot, click <strong>Share</strong>, and a QR code appears.</li>
+        <li>Scan it with your phone&rsquo;s camera &mdash; a page opens that plays the swing with a Save button.</li>
+        <li>Share more shots and they appear on the same page automatically, so you only scan once.</li>
+      </ol>
+      <p>Your phone must be on the <strong>same Wi-Fi</strong> as your PC. The video streams directly between them and never touches the internet. On iPhone, long-press the video and choose &ldquo;Save to Photos&rdquo;; on Android, use the Save button.</p>
+
+      <h3>Save to your PC</h3>
+      <p>Click <strong>Save</strong> to copy the clip anywhere on your computer &mdash; to a coaching folder, a USB drive, or your desktop.</p>
     `,
   },
   {
@@ -169,7 +230,8 @@ export const docSections: DocSection[] = [
           <tr><td><kbd>A</kbd></td><td>Arm / disarm the swing trigger</td></tr>
           <tr><td><kbd>T</kbd></td><td>Record now (manual trigger)</td></tr>
           <tr><td><kbd>P</kbd></td><td>Show / hide the PiP overlay</td></tr>
-          <tr><td><kbd>Esc</kbd></td><td>Dismiss replay, back to live view</td></tr>
+          <tr><td><kbd>Delete</kbd></td><td>Remove the selected drawing (while drawing)</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Exit drawing, dismiss replay, or close the compare window</td></tr>
         </tbody>
       </table>
     `,

@@ -1,7 +1,6 @@
 import {
   Eye,
   PictureInPicture2,
-  Smartphone,
   Camera,
   RotateCcw,
   Timer,
@@ -9,6 +8,10 @@ import {
   Heart,
   Star,
   QrCode,
+  PenTool,
+  Columns2,
+  Gauge,
+  Share2,
 } from 'lucide-react';
 
 const features = [
@@ -49,10 +52,34 @@ const features = [
       'Looping playback starts automatically after every shot, and you stay armed — just step up and hit the next ball.',
   },
   {
+    icon: Gauge,
+    title: 'Slow Motion',
+    description:
+      'Slow any replay down to a tenth speed to study the moment through impact frame by frame.',
+  },
+  {
+    icon: Columns2,
+    title: 'Compare Swings',
+    description:
+      'Put two swings side by side on one synced timeline — today’s against a reference from last week — and nudge them into alignment at impact.',
+  },
+  {
+    icon: PenTool,
+    title: 'Drawing Tools',
+    description:
+      'Draw swing-plane lines and alignment circles right on the video. They stick to each camera and show up on the replay and the sim overlay.',
+  },
+  {
     icon: FolderOpen,
     title: 'Session Library',
     description:
       'Every shot lands in a session with thumbnails. Browse past sessions and replay any swing with one click.',
+  },
+  {
+    icon: Share2,
+    title: 'Send to Your Phone',
+    description:
+      'Beam any clip to your phone with a QR code, or save it anywhere on your PC. Everything stays on your local network.',
   },
   {
     icon: Star,
