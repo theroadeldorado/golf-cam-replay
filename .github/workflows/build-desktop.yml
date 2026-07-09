@@ -1,4 +1,4 @@
-name: Build Desktop v2
+name: Build Desktop
 
 on:
   release:
@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   build-windows:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v2')
     runs-on: windows-latest
     defaults:
       run:

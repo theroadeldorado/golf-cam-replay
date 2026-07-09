@@ -1,6 +1,6 @@
-# ReplaySwing v2.0.0
+# ReplaySwing 0.4.0-beta
 
-A ground-up rebuild. ReplaySwing now **watches your swing through the camera** — no microphone, no impact-sound tuning — and phones connect by **scanning a QR code**, no app to install. Under the hood it's a new Electron app that replaces the old camera engine wholesale, which fixes the crashes and black-camera problems from v1.
+A ground-up rebuild. ReplaySwing now **watches your swing through the camera** — no microphone, no impact-sound tuning — and phones connect by **scanning a QR code**, no app to install. Under the hood it's a new app that replaces the old camera engine wholesale, which fixes the crashes and black-camera problems from earlier builds.
 
 ## Highlights
 
@@ -15,11 +15,11 @@ A ground-up rebuild. ReplaySwing now **watches your swing through the camera** �
 
 ## Why the rewrite
 
-v1's camera layer was the source of most crashes — black frames from virtual cameras, backend probing, and native segfaults. v2 uses the browser's camera stack instead, so cameras that work in Chrome work here, with stable device IDs and hot-plug support. The microphone trigger and DroidCam are gone entirely.
+The old camera layer was the source of most crashes — black frames from virtual cameras, backend probing, and native segfaults. This rebuild uses the browser's camera stack instead, so cameras that work in Chrome work here, with stable device IDs and hot-plug support. The microphone trigger and DroidCam are gone entirely.
 
 ## Install
 
-Download **ReplaySwing-Setup-2.0.0.exe** below and run it (Windows 10/11, no admin needed). The app is not yet code-signed, so Windows SmartScreen will show "Windows protected your PC" — click **More info → Run anyway**. Auto-updates are built in, so future versions install themselves.
+Download **ReplaySwing-Setup-0.4.0-beta.exe** below and run it (Windows 10/11, no admin needed). The app is not yet code-signed, so Windows SmartScreen will show "Windows protected your PC" — click **More info → Run anyway**. Auto-updates are built in, so future versions install themselves.
 
 Your existing swings in `~/GolfSwings/` carry over and appear in the gallery.
 
