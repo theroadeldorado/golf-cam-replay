@@ -1,6 +1,6 @@
 {
   "name": "replayswing-desktop",
-  "version": "2.0.0-alpha.0",
+  "version": "2.0.0",
   "description": "ReplaySwing v2 — instant golf swing replay for your simulator",
   "main": "./out/main/index.js",
   "author": "TR2E",
