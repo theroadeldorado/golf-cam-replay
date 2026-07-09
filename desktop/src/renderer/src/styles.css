@@ -142,25 +142,6 @@ button:focus-visible {
   color: var(--ink);
 }
 
-.pick-banner {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 8px 14px;
-  background: var(--lock);
-  color: var(--ink);
-  font-weight: 600;
-  font-size: 13px;
-}
-
-.pick-banner button {
-  background: rgba(11, 13, 12, 0.15);
-  border: 1px solid rgba(11, 13, 12, 0.3);
-  color: var(--ink);
-  padding: 4px 12px;
-}
 
 .main {
   flex: 1;
@@ -473,14 +454,33 @@ button:focus-visible {
   line-height: 1.7;
 }
 
-/* ---- Comparison ---- */
+/* ---- Comparison modal ---- */
 
-.compare-view {
-  flex: 1;
-  min-height: 0;
+.compare-modal {
+  position: fixed;
+  inset: 24px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+}
+
+.compare-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.compare-modal-head h2 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-stretch: 115%;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .compare-panes {
@@ -488,35 +488,40 @@ button:focus-visible {
   min-height: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 10px;
 }
 
 .compare-pane {
-  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.compare-select {
+  background: var(--panel-raised);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+.compare-video-wrap {
+  flex: 1;
+  min-height: 0;
   background: #000;
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
-  min-height: 0;
 }
 
-.compare-pane video {
+.compare-video-wrap video {
   width: 100%;
   height: 100%;
   object-fit: contain;
   display: block;
-}
-
-.compare-label {
-  position: absolute;
-  left: 10px;
-  bottom: 10px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  background: rgba(11, 13, 12, 0.8);
-  border: 1px solid var(--line);
-  padding: 3px 8px;
-  border-radius: 4px;
 }
 
 .compare-controls {

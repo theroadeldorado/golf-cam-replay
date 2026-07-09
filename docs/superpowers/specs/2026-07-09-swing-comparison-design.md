@@ -6,18 +6,21 @@ Side-by-side synchronized playback of two clips — the last v1 fast-follow.
 
 ## Entering & picking
 
-- **Compare** button in the top toolbar → "pick" mode. A banner reads "Pick
-  the first shot", rail clicks *select* instead of playing; after one pick it
-  reads "Pick the second shot". The session dropdown still works between
-  picks, so A and B can be from different sessions.
-- Each pick stores `{ sessionId, clip }`. Two picks → the comparison opens.
-- A cancel affordance exits pick mode.
+_(Revised after live feedback: a self-contained modal with per-pane dropdowns
+replaced the original rail pick-mode, which felt awkward. Swap A↔B removed.)_
+
+- **Compare** button in the top toolbar opens a modal popup, decoupled from
+  the main stage. The app is dimmed behind a scrim; Close or Esc dismisses it.
+- Each pane has a **dropdown** listing every clip across all sessions
+  (`{session date} · Shot N`), so you pick and switch A and B freely. Opens
+  defaulted to the two most recent clips. Fewer than two clips → a hint.
 
 ## Comparison view
 
-- Full-stage takeover (same pattern as the replay stage). Two videos side by
-  side: left = A, right = B, each labeled with shot number + session date.
-- Both clips load as in-memory blobs via the existing `clip:read` IPC.
+- Two videos side by side inside the modal: left = A, right = B, each with its
+  dropdown above it.
+- Both clips load as in-memory blobs via the existing `clip:read` IPC; the
+  App flattens `session:list` × `session:clips` into the dropdown options.
 
 ## Synced playback + alignment
 
@@ -25,7 +28,7 @@ Side-by-side synchronized playback of two clips — the last v1 fast-follow.
   `A.currentTime + offsetSec`, clamped to `[0, B.duration]`.
 - Controls: play/pause, shared scrubber, speed (0.25× / 0.5× / 1×), frame
   step (◀ ▮ ▶, pause + nudge both one frame), **alignment offset** (−/＋ shift
-  B relative to A by one frame, current offset shown), swap A↔B, exit.
+  B relative to A by one frame, current offset shown), close.
 - Smoothness: both videos `play()` natively at the chosen `playbackRate`; a
   per-frame drift-correction loop nudges B back onto `A + offset` when
   `|B − (A+offset)| > 50ms`. Both loop; when A wraps to 0, B follows.
