@@ -15,6 +15,13 @@ import { setupCrashCapture } from './crash'
 // when the router blocks mDNS multicast.
 app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns')
 
+// Tests point REPLAYSWING_DATA_DIR at a temp dir; give those instances their
+// own userData too so the single-instance lock (scoped by userData) doesn't
+// collide with a normally running app.
+if (process.env['REPLAYSWING_DATA_DIR']) {
+  app.setPath('userData', join(process.env['REPLAYSWING_DATA_DIR'], '.electron'))
+}
+
 // E2E tests: synthetic camera + auto-granted permissions. An optional y4m
 // file drives the fake camera's content (used to exercise the vision trigger).
 if (process.env['REPLAYSWING_FAKE_MEDIA']) {

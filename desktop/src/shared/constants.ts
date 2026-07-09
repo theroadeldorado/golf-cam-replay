@@ -18,7 +18,8 @@ export const DEFAULT_SETTINGS: Settings = {
   sensitivity: 2,
   roi: null,
   pip: { bounds: null, visible: false },
-  mainWindowBounds: null
+  mainWindowBounds: null,
+  drawings: {}
 }
 
 export const MAX_CAMERAS = 4

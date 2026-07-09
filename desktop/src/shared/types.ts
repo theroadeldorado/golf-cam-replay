@@ -20,6 +20,29 @@ export interface WindowBounds {
   height: number
 }
 
+/** Drawing annotations, stored per camera in normalized 0–1 coordinates
+ * relative to the video image (see renderer/src/drawing/shapes.ts). */
+export interface DrawnLine {
+  id: string
+  kind: 'line'
+  color: string
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+}
+
+export interface DrawnCircle {
+  id: string
+  kind: 'circle'
+  color: string
+  cx: number
+  cy: number
+  r: number
+}
+
+export type DrawnShape = DrawnLine | DrawnCircle
+
 export interface Settings {
   preRollSec: number
   postRollSec: number
@@ -33,6 +56,8 @@ export interface Settings {
   roi: NormalizedRect | null
   pip: { bounds: WindowBounds | null; visible: boolean }
   mainWindowBounds: WindowBounds | null
+  /** Per-camera drawing annotations, keyed by camera id. */
+  drawings: Record<string, DrawnShape[]>
 }
 
 /** Extra metadata v2 records per clip. Lives under the `v2` key in clips.json

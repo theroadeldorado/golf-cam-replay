@@ -8,6 +8,9 @@ import { ProgramBus } from '../playback/program-bus'
 import { PairingDialog, type PairingInfo } from '../ui/PairingDialog'
 import { Rail, clipUrl } from '../ui/Rail'
 import { SettingsSheet } from '../ui/SettingsSheet'
+import { DrawingOverlay, type DrawTool } from '../drawing/DrawingOverlay'
+import { DrawToolbar } from '../drawing/DrawToolbar'
+import { SHAPE_COLORS, type Shape } from '../drawing/shapes'
 import QRCode from 'qrcode'
 
 type TallyState = 'off' | 'watching' | 'address' | 'capturing'
@@ -24,14 +27,86 @@ interface ReplayInfo {
   label: string
   /** Object URLs need revoking; clip:// URLs don't. */
   objectUrl: boolean
+  /** Which camera's footage this is — binds the replay to that camera's drawings. */
+  cameraId: string | null
+}
+
+interface DrawState {
+  active: boolean
+  tool: DrawTool
+  color: string
+}
+
+interface DrawSelection {
+  cameraId: string
+  shapeId: string
+}
+
+/** The camera whose file is the clip's primary MP4. */
+function clipPrimaryCameraId(meta: ClipMeta): string | null {
+  return Object.entries(meta.camera_files).find(([, file]) => file === meta.file)?.[0] ?? null
+}
+
+function ReplayStage({
+  replay,
+  shapes,
+  draw,
+  selectedId,
+  onSelect,
+  onShapesChange,
+  onDismiss
+}: {
+  replay: ReplayInfo
+  shapes: Shape[]
+  draw: DrawState
+  selectedId: string | null
+  onSelect: (id: string | null) => void
+  onShapesChange: (shapes: Shape[], commit: boolean) => void
+  onDismiss: () => void
+}): React.JSX.Element {
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  return (
+    <div className="replay-stage">
+      <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex' }}>
+        <video ref={videoRef} src={replay.url} autoPlay loop muted playsInline />
+        <DrawingOverlay
+          shapes={shapes}
+          active={draw.active}
+          tool={draw.tool}
+          color={draw.color}
+          videoRef={videoRef}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          onChange={onShapesChange}
+        />
+      </div>
+      <div className="replay-caption">
+        <strong>{replay.label}</strong>
+        <span>looping — Esc or Back to live</span>
+        <div style={{ flex: 1 }} />
+        <button onClick={onDismiss}>Back to live</button>
+      </div>
+    </div>
+  )
 }
 
 function CameraTile({
   camera,
-  onRemove
+  onRemove,
+  shapes,
+  draw,
+  selectedId,
+  onSelect,
+  onShapesChange
 }: {
   camera: ActiveCamera
   onRemove: () => void
+  shapes: Shape[]
+  draw: DrawState
+  selectedId: string | null
+  onSelect: (id: string | null) => void
+  onShapesChange: (shapes: Shape[], commit: boolean) => void
 }): React.JSX.Element {
   const videoRef = useRef<HTMLVideoElement>(null)
   useEffect(() => {
@@ -41,6 +116,16 @@ function CameraTile({
   return (
     <div className="camera-tile">
       <video ref={videoRef} autoPlay muted playsInline />
+      <DrawingOverlay
+        shapes={shapes}
+        active={draw.active}
+        tool={draw.tool}
+        color={draw.color}
+        videoRef={videoRef}
+        selectedId={selectedId}
+        onSelect={onSelect}
+        onChange={onShapesChange}
+      />
       <span className="tag">
         {camera.label} · {camera.state === 'live' ? `${camera.measuredFps} fps` : camera.state}
         {camera.error ? ` — ${camera.error}` : ''}
@@ -63,6 +148,8 @@ export function App(): React.JSX.Element {
   const [vision, setVision] = useState<VisionSampleEvent | null>(null)
   const [replay, setReplay] = useState<ReplayInfo | null>(null)
   const [pairing, setPairing] = useState<PairingInfo | null>(null)
+  const [draw, setDraw] = useState<DrawState>({ active: false, tool: 'line', color: SHAPE_COLORS[0] })
+  const [drawSelection, setDrawSelection] = useState<DrawSelection | null>(null)
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [selectedSession, setSelectedSession] = useState<string | null>(null)
   const [clips, setClips] = useState<ClipMeta[]>([])
@@ -103,14 +190,16 @@ export function App(): React.JSX.Element {
       controller.on('visionEvent', setVision)
       controller.on('clipSaved', (meta, primaryMp4) => {
         const url = URL.createObjectURL(new Blob([primaryMp4], { type: 'video/mp4' }))
+        const cameraId = clipPrimaryCameraId(meta)
         setReplay((previous) => {
           if (previous?.objectUrl) URL.revokeObjectURL(previous.url)
-          return { url, label: `Saved ${meta.file}`, objectUrl: true }
+          return { url, label: `Saved ${meta.file}`, objectUrl: true, cameraId }
         })
-        bus.setReplayUrl(url)
+        bus.setReplayUrl(url, cameraId)
         void refreshGallery()
       })
 
+      bus.setDrawings(loaded.drawings)
       for (const camera of loaded.cameras) {
         if (camera.kind === 'usb') void controller.addUsbCamera(camera.id, camera.label)
       }
@@ -187,16 +276,59 @@ export function App(): React.JSX.Element {
       controllerRef.current?.removeCamera(id)
       if (!settings) return
       const remaining = settings.cameras.filter((camera) => camera.id !== id)
+      const { [id]: _removed, ...drawings } = settings.drawings
       const updated = await window.api.invoke('settings:set', {
         cameras: remaining,
         primaryCameraId:
-          settings.primaryCameraId === id ? (remaining[0]?.id ?? null) : settings.primaryCameraId
+          settings.primaryCameraId === id ? (remaining[0]?.id ?? null) : settings.primaryCameraId,
+        drawings
       })
       setSettings(updated)
+      setDrawSelection((sel) => (sel?.cameraId === id ? null : sel))
       controllerRef.current?.updateSettings(updated)
+      busRef.current?.setDrawings(updated.drawings)
     },
     [settings]
   )
+
+  /** Update one camera's shape list; persist + sync PiP when the gesture commits. */
+  const updateDrawings = useCallback((cameraId: string, shapes: Shape[], commit: boolean) => {
+    setSettings((previous) => {
+      if (!previous) return previous
+      const drawings = { ...previous.drawings, [cameraId]: shapes }
+      busRef.current?.setDrawings(drawings)
+      if (commit) void window.api.invoke('settings:set', { drawings })
+      return { ...previous, drawings }
+    })
+  }, [])
+
+  const deleteSelectedShape = useCallback(() => {
+    if (!drawSelection || !settings) return
+    const shapes = (settings.drawings[drawSelection.cameraId] ?? []).filter(
+      (shape) => shape.id !== drawSelection.shapeId
+    )
+    updateDrawings(drawSelection.cameraId, shapes, true)
+    setDrawSelection(null)
+  }, [drawSelection, settings, updateDrawings])
+
+  const setDrawColor = useCallback(
+    (color: string) => {
+      setDraw((current) => ({ ...current, color }))
+      // Recolor the selection too, like every drawing app.
+      if (drawSelection && settings) {
+        const shapes = (settings.drawings[drawSelection.cameraId] ?? []).map((shape) =>
+          shape.id === drawSelection.shapeId ? { ...shape, color } : shape
+        )
+        updateDrawings(drawSelection.cameraId, shapes, true)
+      }
+    },
+    [drawSelection, settings, updateDrawings]
+  )
+
+  const toggleDraw = useCallback(() => {
+    setDraw((current) => ({ ...current, active: !current.active }))
+    setDrawSelection(null)
+  }, [])
 
   const applySettings = useCallback(async (patch: Partial<Settings>) => {
     const updated = await window.api.invoke('settings:set', patch)
@@ -229,27 +361,34 @@ export function App(): React.JSX.Element {
     (clip: ClipMeta) => {
       if (!selectedSession) return
       const url = clipUrl(selectedSession, clip.file)
+      const cameraId = clipPrimaryCameraId(clip)
       setReplay((previous) => {
         if (previous?.objectUrl) URL.revokeObjectURL(previous.url)
-        return { url, label: clip.file, objectUrl: false }
+        return { url, label: clip.file, objectUrl: false, cameraId }
       })
-      busRef.current?.setReplayUrl(url)
+      busRef.current?.setReplayUrl(url, cameraId)
     },
     [selectedSession]
   )
 
-  // Keyboard: A = arm, T = manual trigger, P = PiP, Esc = back to live.
+  // Keyboard: A = arm, T = manual trigger, P = PiP.
+  // Esc exits draw mode first, then dismisses the replay. Delete removes the
+  // selected shape while drawing.
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return
       if (event.key === 't' || event.key === 'T') recordNow()
       if (event.key === 'a' || event.key === 'A') toggleArmed()
       if (event.key === 'p' || event.key === 'P') void window.api.invoke('pip:toggle')
-      if (event.key === 'Escape') dismissReplay()
+      if ((event.key === 'Delete' || event.key === 'Backspace') && draw.active) deleteSelectedShape()
+      if (event.key === 'Escape') {
+        if (draw.active) toggleDraw()
+        else dismissReplay()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [recordNow, toggleArmed, dismissReplay])
+  }, [recordNow, toggleArmed, dismissReplay, draw.active, deleteSelectedShape, toggleDraw])
 
   const tally: TallyState = capturing
     ? 'capturing'
@@ -282,17 +421,40 @@ export function App(): React.JSX.Element {
       </header>
 
       <div className="main">
-        <div className="stage">
+        <div className="stage" style={{ position: 'relative' }}>
+          {(cameras.length > 0 || replay) && (
+            <DrawToolbar
+              active={draw.active}
+              tool={draw.tool}
+              color={draw.color}
+              hasSelection={drawSelection !== null}
+              onToggle={toggleDraw}
+              onTool={(tool) => {
+                // Switching to a creation tool deselects, so the next color
+                // pick applies to the new shape, not the previous selection.
+                if (tool !== 'select') setDrawSelection(null)
+                setDraw((current) => ({ ...current, tool }))
+              }}
+              onColor={setDrawColor}
+              onDelete={deleteSelectedShape}
+            />
+          )}
           {replay ? (
-            <div className="replay-stage">
-              <video src={replay.url} autoPlay loop muted playsInline />
-              <div className="replay-caption">
-                <strong>{replay.label}</strong>
-                <span>looping — Esc or Back to live</span>
-                <div style={{ flex: 1 }} />
-                <button onClick={dismissReplay}>Back to live</button>
-              </div>
-            </div>
+            <ReplayStage
+              replay={replay}
+              shapes={replay.cameraId ? (settings?.drawings[replay.cameraId] ?? []) : []}
+              draw={draw}
+              selectedId={drawSelection?.cameraId === replay.cameraId ? drawSelection.shapeId : null}
+              onSelect={(id) =>
+                setDrawSelection(
+                  id && replay.cameraId ? { cameraId: replay.cameraId, shapeId: id } : null
+                )
+              }
+              onShapesChange={(shapes, commit) => {
+                if (replay.cameraId) updateDrawings(replay.cameraId, shapes, commit)
+              }}
+              onDismiss={dismissReplay}
+            />
           ) : cameras.length === 0 ? (
             <div className="empty-stage">
               <p>
@@ -304,7 +466,18 @@ export function App(): React.JSX.Element {
           ) : (
             <div className="camera-grid" style={{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)` }}>
               {cameras.map((camera) => (
-                <CameraTile key={camera.id} camera={camera} onRemove={() => void removeCamera(camera.id)} />
+                <CameraTile
+                  key={camera.id}
+                  camera={camera}
+                  onRemove={() => void removeCamera(camera.id)}
+                  shapes={settings?.drawings[camera.id] ?? []}
+                  draw={draw}
+                  selectedId={drawSelection?.cameraId === camera.id ? drawSelection.shapeId : null}
+                  onSelect={(id) =>
+                    setDrawSelection(id ? { cameraId: camera.id, shapeId: id } : null)
+                  }
+                  onShapesChange={(shapes, commit) => updateDrawings(camera.id, shapes, commit)}
+                />
               ))}
             </div>
           )}

@@ -5,6 +5,8 @@
  * automatically mirrors live ↔ replay with no logic of its own.
  */
 
+import { drawShapesToCanvas, type Shape } from '../drawing/shapes'
+
 const WIDTH = 1280
 const HEIGHT = 720
 const FPS = 30
@@ -20,6 +22,8 @@ export class ProgramBus {
   private ctx: CanvasRenderingContext2D
   private videos = new Map<string, HTMLVideoElement>()
   private replayVideo: HTMLVideoElement | null = null
+  private replayCameraId: string | null = null
+  private drawings: Record<string, Shape[]> = {}
   private peer: RTCPeerConnection | null = null
   private drawTimer: ReturnType<typeof setInterval> | null = null
 
@@ -56,7 +60,13 @@ export class ProgramBus {
     }
   }
 
-  setReplayUrl(url: string | null): void {
+  /** Annotations to burn into each camera's cell (and its replay). */
+  setDrawings(drawings: Record<string, Shape[]>): void {
+    this.drawings = drawings
+  }
+
+  setReplayUrl(url: string | null, cameraId: string | null = null): void {
+    this.replayCameraId = cameraId
     if (!url) {
       this.replayVideo = null
       return
@@ -112,30 +122,46 @@ export class ProgramBus {
     ctx.fillRect(0, 0, WIDTH, HEIGHT)
 
     if (this.replayVideo && this.replayVideo.videoWidth > 0) {
-      this.drawContained(this.replayVideo, 0, 0, WIDTH, HEIGHT)
+      this.drawCell(this.replayVideo, this.replayCameraId, 0, 0, WIDTH, HEIGHT)
       return
     }
 
-    const videos = [...this.videos.values()].filter((video) => video.videoWidth > 0)
-    if (videos.length === 0) return
-    if (videos.length === 1) {
-      this.drawContained(videos[0], 0, 0, WIDTH, HEIGHT)
-    } else if (videos.length === 2) {
-      this.drawContained(videos[0], 0, 0, WIDTH / 2, HEIGHT)
-      this.drawContained(videos[1], WIDTH / 2, 0, WIDTH / 2, HEIGHT)
+    const entries = [...this.videos.entries()].filter(([, video]) => video.videoWidth > 0)
+    if (entries.length === 0) return
+    if (entries.length === 1) {
+      this.drawCell(entries[0][1], entries[0][0], 0, 0, WIDTH, HEIGHT)
+    } else if (entries.length === 2) {
+      this.drawCell(entries[0][1], entries[0][0], 0, 0, WIDTH / 2, HEIGHT)
+      this.drawCell(entries[1][1], entries[1][0], WIDTH / 2, 0, WIDTH / 2, HEIGHT)
     } else {
-      videos.slice(0, 4).forEach((video, index) => {
+      entries.slice(0, 4).forEach(([id, video], index) => {
         const x = (index % 2) * (WIDTH / 2)
         const y = Math.floor(index / 2) * (HEIGHT / 2)
-        this.drawContained(video, x, y, WIDTH / 2, HEIGHT / 2)
+        this.drawCell(video, id, x, y, WIDTH / 2, HEIGHT / 2)
       })
     }
   }
 
-  private drawContained(video: HTMLVideoElement, x: number, y: number, w: number, h: number): void {
+  /** Draw a video contained in a cell, then burn that camera's annotations
+   * over the actual image area. */
+  private drawCell(
+    video: HTMLVideoElement,
+    cameraId: string | null,
+    x: number,
+    y: number,
+    w: number,
+    h: number
+  ): void {
     const scale = Math.min(w / video.videoWidth, h / video.videoHeight)
     const dw = video.videoWidth * scale
     const dh = video.videoHeight * scale
-    this.ctx.drawImage(video, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh)
+    const dx = x + (w - dw) / 2
+    const dy = y + (h - dh) / 2
+    this.ctx.drawImage(video, dx, dy, dw, dh)
+
+    const shapes = cameraId ? this.drawings[cameraId] : undefined
+    if (shapes?.length) {
+      drawShapesToCanvas(this.ctx, shapes, { x: dx, y: dy, width: dw, height: dh })
+    }
   }
 }

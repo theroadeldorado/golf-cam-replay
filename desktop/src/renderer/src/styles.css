@@ -226,9 +226,8 @@ button:focus-visible {
 }
 
 .replay-stage video {
-  flex: 1;
-  min-height: 0;
   width: 100%;
+  height: 100%;
   object-fit: contain;
   background: #000;
   border-radius: 8px;
@@ -428,6 +427,57 @@ button:focus-visible {
   font-size: 12px;
   text-align: center;
   line-height: 1.7;
+}
+
+/* ---- Draw toolbar ---- */
+
+.draw-toolbar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(11, 13, 12, 0.85);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.tool-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  border-radius: 6px;
+}
+
+.tool-btn.on {
+  background: var(--lock);
+  border-color: var(--lock);
+  color: var(--ink);
+}
+
+.swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+
+.swatch.on {
+  border-color: var(--fg);
+}
+
+.draw-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+  margin: 0 3px;
 }
 
 /* ---- Dialogs ---- */
