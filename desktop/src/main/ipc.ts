@@ -2,7 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron'
 import type { EventChannel, EventChannels, InvokeChannel, InvokeChannels } from '@shared/ipc-contract'
 import type { SettingsStore } from './settings-store'
 import type { WindowRegistry } from './windows'
-import { deleteClip, listSessions, pinClip, readClips } from './clip-store'
+import { deleteClip, listSessions, pinClip, readClipFile, readClips } from './clip-store'
 import { ClipWriter } from './clip-writer'
 import { log } from './logging'
 
@@ -37,6 +37,7 @@ export function registerIpc(store: SettingsStore, windows: WindowRegistry): void
   })
   handle('session:list', () => listSessions())
   handle('session:clips', (_sender, sessionId) => readClips(sessionId))
+  handle('clip:read', (_sender, sessionId, fileName) => readClipFile(sessionId, fileName))
   handle('clip:pin', (_sender, sessionId, index, pinned) => pinClip(sessionId, index, pinned))
   handle('clip:delete', (_sender, sessionId, index) => deleteClip(sessionId, index))
 

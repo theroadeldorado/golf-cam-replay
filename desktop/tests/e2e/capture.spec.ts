@@ -83,3 +83,19 @@ test('captures a second clip in the same session', async () => {
   const clips = JSON.parse(readFileSync(join(dataDir, sessions[0], 'clips.json'), 'utf-8'))
   expect(clips).toHaveLength(2)
 })
+
+test('selecting a shot from the rail plays it on the stage', async () => {
+  await page.keyboard.press('Escape') // back to live
+  await page.locator('.shot-card').last().click() // oldest shot
+
+  await expect(page.getByText(/shot_0000\.mp4/)).toBeVisible()
+  // The clip actually decodes and plays — not a black frame.
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const v = document.querySelector('.replay-stage video') as HTMLVideoElement | null
+        return v ? { w: v.videoWidth, err: v.error?.code ?? null } : null
+      })
+    )
+    .toEqual({ w: 1280, err: null })
+})

@@ -9,6 +9,8 @@ export interface InvokeChannels {
   'settings:set': { args: [patch: Partial<Settings>]; result: Settings }
   'session:list': { args: []; result: SessionInfo[] }
   'session:clips': { args: [sessionId: string]; result: ClipMeta[] }
+  /** Read a clip's MP4 bytes for blob playback. */
+  'clip:read': { args: [sessionId: string, fileName: string]; result: ArrayBuffer }
   /** The session this run is writing into (null until the first clip saves). */
   'session:current': { args: []; result: string | null }
   'clip:save': { args: [request: SaveClipRequest]; result: ClipMeta }

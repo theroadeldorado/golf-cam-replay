@@ -6,7 +6,7 @@ import { PhoneCameraSource } from '../cameras/phone-source'
 import type { VisionSampleEvent } from '../trigger/vision-trigger'
 import { ProgramBus } from '../playback/program-bus'
 import { PairingDialog, type PairingInfo } from '../ui/PairingDialog'
-import { Rail, clipUrl } from '../ui/Rail'
+import { Rail } from '../ui/Rail'
 import { SettingsSheet } from '../ui/SettingsSheet'
 import { DrawingOverlay, type DrawTool } from '../drawing/DrawingOverlay'
 import { DrawToolbar } from '../drawing/DrawToolbar'
@@ -358,13 +358,16 @@ export function App(): React.JSX.Element {
   }, [])
 
   const playClip = useCallback(
-    (clip: ClipMeta) => {
+    async (clip: ClipMeta) => {
       if (!selectedSession) return
-      const url = clipUrl(selectedSession, clip.file)
       const cameraId = clipPrimaryCameraId(clip)
+      // Play from an in-memory blob, same proven path as instant replay —
+      // <video> can't stream the clip:// protocol reliably.
+      const bytes = await window.api.invoke('clip:read', selectedSession, clip.file)
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'video/mp4' }))
       setReplay((previous) => {
         if (previous?.objectUrl) URL.revokeObjectURL(previous.url)
-        return { url, label: clip.file, objectUrl: false, cameraId }
+        return { url, label: clip.file, objectUrl: true, cameraId }
       })
       busRef.current?.setReplayUrl(url, cameraId)
     },

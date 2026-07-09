@@ -34,6 +34,16 @@ export function listSessions(): SessionInfo[] {
   return sessions.sort((a, b) => b.id.localeCompare(a.id))
 }
 
+/** Read a clip's MP4 bytes for blob playback in the renderer. */
+export function readClipFile(sessionId: string, fileName: string): ArrayBuffer {
+  // Guard against path traversal — both parts must be single path segments.
+  if ([sessionId, fileName].some((part) => part.includes('/') || part.includes('..'))) {
+    throw new Error('invalid clip path')
+  }
+  const buffer = readFileSync(join(golfDir(), sessionId, fileName))
+  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
+}
+
 export function readClips(sessionId: string): ClipMeta[] {
   const clipsFile = join(golfDir(), sessionId, 'clips.json')
   if (!existsSync(clipsFile)) return []
