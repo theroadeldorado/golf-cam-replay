@@ -1,10 +1,12 @@
-# ReplaySwing 0.4.1-beta
+# ReplaySwing 0.4.2-beta
 
-## What's new in 0.4.1
+## What's new in 0.4.2
 
-**Smarter swing detection — fewer false shots.** The trigger now recognizes the *shape* of a real swing (a sharp burst that quickly settles) instead of firing on any motion. Walking back into frame, moving around the bay, or a big pre-shot fidget no longer records a phantom shot — only an actual swing does. The "hold still to arm" moment is also a touch longer (~1s) so the app locks onto your address more reliably.
+**Person-aware trigger.** The app now only arms when it actually sees a person in the hitting zone. Combined with the swing-shape filter from 0.4.1, this means it won't go "Set" on an empty bay, won't fire when someone walks past, and won't record a phantom shot when you step back into frame. Runs on-device — nothing leaves your PC. You can turn it off under Settings → "Require a person in view" for unusual camera setups, and it automatically falls back to swing-shape detection if the detector can't start.
 
-_(Still coming: an optional person-detection layer so the app won't even go "Set" on an empty room. It's in the works and will land in a later build.)_
+## From 0.4.1
+
+**Smarter swing detection — fewer false shots.** The trigger recognizes the *shape* of a real swing (a sharp burst that quickly settles) instead of firing on any motion. Walking around the bay or a big pre-shot fidget no longer records a phantom shot. The "hold still to arm" moment is ~1s so the app locks onto your address more reliably.
 
 ---
 
@@ -27,7 +29,7 @@ The old camera layer was the source of most crashes — black frames from virtua
 
 ## Install
 
-Download **ReplaySwing-Setup-0.4.1-beta.exe** below and run it (Windows 10/11, no admin needed). The app is not yet code-signed, so Windows SmartScreen will show "Windows protected your PC" — click **More info → Run anyway**. Auto-updates are built in, so future versions install themselves.
+Download **ReplaySwing-Setup-0.4.2-beta.exe** below and run it (Windows 10/11, no admin needed). The app is not yet code-signed, so Windows SmartScreen will show "Windows protected your PC" — click **More info → Run anyway**. Auto-updates are built in, so future versions install themselves.
 
 Your existing swings in `~/GolfSwings/` carry over and appear in the gallery.
 
