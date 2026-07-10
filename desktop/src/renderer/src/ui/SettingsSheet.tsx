@@ -57,6 +57,21 @@ export function SettingsSheet({
         </div>
 
         <div className="field">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, textTransform: 'none', letterSpacing: 0 }}>
+            <input
+              type="checkbox"
+              checked={settings.requirePresence}
+              onChange={(event) => onChange({ requirePresence: event.target.checked })}
+            />
+            Require a person in view
+          </label>
+          <p className="hint" style={{ marginTop: 6 }}>
+            The trigger only arms when it sees someone in the hitting zone, so it won&apos;t fire on
+            an empty bay or someone walking past. Turn off for unusual camera setups.
+          </p>
+        </div>
+
+        <div className="field">
           <label>Trigger camera</label>
           <select
             value={settings.primaryCameraId ?? ''}

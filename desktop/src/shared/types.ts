@@ -52,6 +52,8 @@ export interface Settings {
   primaryCameraId: string | null
   /** Vision trigger sensitivity: 1 = low, 2 = medium, 3 = high */
   sensitivity: 1 | 2 | 3
+  /** Require a person detected in view before the trigger can arm (address). */
+  requirePresence: boolean
   /** Region of interest for the vision trigger, normalized 0–1 coords. null = default center region. */
   roi: NormalizedRect | null
   pip: { bounds: WindowBounds | null; visible: boolean }

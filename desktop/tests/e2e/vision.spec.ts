@@ -53,7 +53,10 @@ test.beforeAll(async () => {
       ...process.env,
       REPLAYSWING_DATA_DIR: dataDir,
       REPLAYSWING_FAKE_MEDIA: '1',
-      REPLAYSWING_FAKE_MEDIA_FILE: fixture
+      REPLAYSWING_FAKE_MEDIA_FILE: fixture,
+      // The synthetic feed has no person; bypass the ML presence gate so this
+      // test exercises the shape filter (presence itself is validated separately).
+      REPLAYSWING_DISABLE_PRESENCE: '1'
     }
   })
   page = await app.firstWindow()

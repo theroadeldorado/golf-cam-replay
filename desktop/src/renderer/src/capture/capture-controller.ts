@@ -12,6 +12,7 @@ import {
   STILL_DURATION_DEFAULT_MS,
   type VisionSampleEvent
 } from '../trigger/vision-trigger'
+import { PresenceDetector } from '../trigger/presence-detector'
 
 const BITRATE = 7_000_000
 const CLIP_COLLECT_TIMEOUT_MS = 12_000
@@ -65,8 +66,14 @@ export class CaptureController {
   private pending: PendingCapture | null = null
   private listeners: Partial<ControllerEvents> = {}
   private visionTrigger: VisionTrigger | null = null
+  private presenceDetector: PresenceDetector | null = null
+  /** Latest presence; defaults true so a missing/failed model degrades to shape-only. */
+  private presentNow = true
 
-  constructor(private settings: Settings) {}
+  constructor(
+    private settings: Settings,
+    private readonly disablePresence = false
+  ) {}
 
   /** Arm/disarm the vision trigger. Manual trigger works regardless. */
   setArmed(armed: boolean): void {
@@ -80,11 +87,45 @@ export class CaptureController {
         )
       })
       this.visionTrigger.arm(performance.now())
+      this.startPresence()
     } else {
       this.visionTrigger?.disarm()
       this.visionTrigger = null
+      this.stopPresence()
     }
   }
+
+  /** Load + run the person detector on the primary camera while armed. Any
+   * failure leaves presentNow = true (shape-filter-only). */
+  private startPresence(): void {
+    this.presentNow = true
+    if (this.disablePresence || !this.settings.requirePresence) return
+    const detector = new PresenceDetector()
+    this.presenceDetector = detector
+    void detector
+      .load()
+      .then(() => {
+        if (this.presenceDetector !== detector) return // disarmed during load
+        if (this.thumbnailVideo) detector.start(this.thumbnailVideo)
+        this.presencePoll = setInterval(() => {
+          this.presentNow = detector.latest.present
+        }, 100)
+      })
+      .catch((error) => {
+        this.presentNow = true
+        console.warn('Presence model unavailable — using shape-filter only:', error)
+      })
+  }
+
+  private stopPresence(): void {
+    if (this.presencePoll) clearInterval(this.presencePoll)
+    this.presencePoll = null
+    this.presenceDetector?.dispose()
+    this.presenceDetector = null
+    this.presentNow = true
+  }
+
+  private presencePoll: ReturnType<typeof setInterval> | null = null
 
   get isArmed(): boolean {
     return this.visionTrigger !== null
@@ -206,6 +247,8 @@ export class CaptureController {
     this.thumbnailVideo.muted = true
     this.thumbnailVideo.srcObject = stream
     void this.thumbnailVideo.play().catch(() => {})
+    // If the primary camera (re)connected while armed, point presence at it.
+    if (this.presenceDetector?.available) this.presenceDetector.rebind(this.thumbnailVideo)
   }
 
   removeCamera(id: string): void {
@@ -279,7 +322,7 @@ export class CaptureController {
       case 'motion': {
         this.listeners.motion?.(message)
         if (this.visionTrigger) {
-          const event = this.visionTrigger.sample(message.energy, message.wallClockMs)
+          const event = this.visionTrigger.sample(message.energy, message.wallClockMs, this.presentNow)
           this.listeners.visionEvent?.(event)
           if (event.fired && !this.pending) {
             this.triggerNow('vision', undefined, event.firedAtMs)
@@ -351,6 +394,7 @@ export class CaptureController {
   }
 
   dispose(): void {
+    this.stopPresence()
     for (const id of [...this.cameras.keys()]) this.removeCamera(id)
   }
 }

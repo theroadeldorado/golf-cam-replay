@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cameras: [],
   primaryCameraId: null,
   sensitivity: 2,
+  requirePresence: true,
   roi: null,
   pip: { bounds: null, visible: false },
   mainWindowBounds: null,

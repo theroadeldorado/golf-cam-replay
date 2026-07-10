@@ -205,6 +205,7 @@ export function App(): React.JSX.Element {
     let disposed = false
     void (async () => {
       const loaded = await window.api.invoke('settings:get')
+      const { disablePresence } = await window.api.invoke('app:config')
       if (disposed) return
       setSettings(loaded)
 
@@ -215,7 +216,7 @@ export function App(): React.JSX.Element {
         else bus.stop()
       })
 
-      const controller = new CaptureController(loaded)
+      const controller = new CaptureController(loaded, disablePresence)
       controllerRef.current = controller
       controller.on('camerasChanged', (list) => {
         setCameras(list)
@@ -374,11 +375,20 @@ export function App(): React.JSX.Element {
     setDrawSelection(null)
   }, [])
 
-  const applySettings = useCallback(async (patch: Partial<Settings>) => {
-    const updated = await window.api.invoke('settings:set', patch)
-    setSettings(updated)
-    controllerRef.current?.updateSettings(updated)
-  }, [])
+  const applySettings = useCallback(
+    async (patch: Partial<Settings>) => {
+      const updated = await window.api.invoke('settings:set', patch)
+      setSettings(updated)
+      const controller = controllerRef.current
+      controller?.updateSettings(updated)
+      // Presence toggle only takes effect at arm time — re-arm to apply it live.
+      if ('requirePresence' in patch && controller?.isArmed) {
+        controller.setArmed(false)
+        controller.setArmed(true)
+      }
+    },
+    []
+  )
 
   const recordNow = useCallback(() => {
     controllerRef.current?.triggerNow('manual')
