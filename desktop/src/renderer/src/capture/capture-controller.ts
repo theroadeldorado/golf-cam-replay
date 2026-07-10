@@ -7,7 +7,11 @@
 import type { ClipMeta, Settings } from '@shared/types'
 import type { FromWorkerMessage, WorkerInit } from './worker-protocol'
 import { openUsbCamera } from '../cameras/usb'
-import { VisionTrigger, type VisionSampleEvent } from '../trigger/vision-trigger'
+import {
+  VisionTrigger,
+  STILL_DURATION_DEFAULT_MS,
+  type VisionSampleEvent
+} from '../trigger/vision-trigger'
 
 const BITRATE = 7_000_000
 const CLIP_COLLECT_TIMEOUT_MS = 12_000
@@ -69,7 +73,7 @@ export class CaptureController {
     if (armed) {
       this.visionTrigger = new VisionTrigger({
         sensitivity: this.settings.sensitivity,
-        stillDurationMs: 700,
+        stillDurationMs: STILL_DURATION_DEFAULT_MS,
         cooldownMs: Math.max(
           this.settings.cooldownSec * 1000,
           this.settings.postRollSec * 1000 + 2000

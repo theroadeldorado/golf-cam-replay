@@ -29,8 +29,12 @@ function makeSwingY4m(path: string): void {
       Buffer.alloc(cSize, 128)
     ])
 
-  for (let i = 0; i < FPS * 4; i++) frames.push(frame(128)) // still address
-  for (let i = 0; i < FPS * 1.5; i++) frames.push(frame(i % 2 === 0 ? 16 : 235)) // swing strobe
+  // A real swing is a BRIEF burst that settles — not sustained motion (which
+  // the shape filter now correctly rejects). ~4s still address → ~0.3s strobe
+  // → ~1.5s still, so motion spikes then settles within the confirm window.
+  for (let i = 0; i < FPS * 4; i++) frames.push(frame(128)) // still address (> 1s still-duration)
+  for (let i = 0; i < Math.round(FPS * 0.3); i++) frames.push(frame(i % 2 === 0 ? 16 : 235)) // swing burst
+  for (let i = 0; i < Math.round(FPS * 1.5); i++) frames.push(frame(128)) // settle back to still
   writeFileSync(path, Buffer.concat(frames))
 }
 

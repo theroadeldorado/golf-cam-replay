@@ -479,7 +479,8 @@ export function App(): React.JSX.Element {
   const tally: TallyState = capturing
     ? 'capturing'
     : armed
-      ? vision?.state === 'address'
+      ? // 'confirming' is a sub-second post-spike check — keep it green.
+        vision?.state === 'address' || vision?.state === 'confirming'
         ? 'address'
         : 'watching'
       : 'off'
