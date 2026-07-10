@@ -1,6 +1,14 @@
-# ReplaySwing 0.4.0-beta
+# ReplaySwing 0.4.1-beta
 
-A ground-up rebuild. ReplaySwing now **watches your swing through the camera** — no microphone, no impact-sound tuning — and phones connect by **scanning a QR code**, no app to install. Under the hood it's a new app that replaces the old camera engine wholesale, which fixes the crashes and black-camera problems from earlier builds.
+## What's new in 0.4.1
+
+**Smarter swing detection — fewer false shots.** The trigger now recognizes the *shape* of a real swing (a sharp burst that quickly settles) instead of firing on any motion. Walking back into frame, moving around the bay, or a big pre-shot fidget no longer records a phantom shot — only an actual swing does. The "hold still to arm" moment is also a touch longer (~1s) so the app locks onto your address more reliably.
+
+_(Still coming: an optional person-detection layer so the app won't even go "Set" on an empty room. It's in the works and will land in a later build.)_
+
+---
+
+A ground-up rebuild. ReplaySwing **watches your swing through the camera** — no microphone, no impact-sound tuning — and phones connect by **scanning a QR code**, no app to install. Under the hood it's a new app that replaces the old camera engine wholesale, which fixes the crashes and black-camera problems from earlier builds.
 
 ## Highlights
 
@@ -19,7 +27,7 @@ The old camera layer was the source of most crashes — black frames from virtua
 
 ## Install
 
-Download **ReplaySwing-Setup-0.4.0-beta.exe** below and run it (Windows 10/11, no admin needed). The app is not yet code-signed, so Windows SmartScreen will show "Windows protected your PC" — click **More info → Run anyway**. Auto-updates are built in, so future versions install themselves.
+Download **ReplaySwing-Setup-0.4.1-beta.exe** below and run it (Windows 10/11, no admin needed). The app is not yet code-signed, so Windows SmartScreen will show "Windows protected your PC" — click **More info → Run anyway**. Auto-updates are built in, so future versions install themselves.
 
 Your existing swings in `~/GolfSwings/` carry over and appear in the gallery.
 
