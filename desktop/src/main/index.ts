@@ -1,4 +1,5 @@
-import { app, net, protocol } from 'electron'
+import { app, ipcMain, net, protocol } from 'electron'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { setupLogging, log } from './logging'
@@ -34,12 +35,9 @@ if (process.env['REPLAYSWING_FAKE_MEDIA']) {
 }
 
 // clip://media/<sessionId>/<file> streams saved clips/thumbnails to the
-// renderer. asset://mediapipe/... serves bundled ML model + wasm — the app
-// loads over file:// in production, where MediaPipe's own fetch() is blocked,
-// so it goes through this privileged scheme instead (same reason as clip://).
+// renderer (file:// is blocked from http-served dev pages; this works in both).
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'clip', privileges: { stream: true, supportFetchAPI: true } },
-  { scheme: 'asset', privileges: { standard: true, secure: true, supportFetchAPI: true } }
+  { scheme: 'clip', privileges: { stream: true, supportFetchAPI: true } }
 ])
 
 function registerClipProtocol(): void {
@@ -53,16 +51,17 @@ function registerClipProtocol(): void {
   })
 }
 
-function registerAssetProtocol(): void {
-  // Bundled renderer assets live next to the packaged renderer (out/renderer).
+// Reads a bundled renderer asset (e.g. the MediaPipe model + wasm) so the
+// renderer can wrap it in a blob URL — a file:// page can't fetch these
+// directly, and serving them over a custom scheme would change the app origin.
+function registerAssetReader(): void {
   const rendererDir = join(__dirname, '../renderer')
-  protocol.handle('asset', (request) => {
-    const url = new URL(request.url)
-    const relativePath = decodeURIComponent(`${url.host}${url.pathname}`)
-    if (relativePath.split('/').some((part) => part === '..' || part === '')) {
-      return new Response('bad request', { status: 400 })
+  ipcMain.handle('asset:read', (_event, name: string): ArrayBuffer => {
+    if (name.split('/').some((part) => part === '..' || part === '')) {
+      throw new Error('invalid asset path')
     }
-    return net.fetch(pathToFileURL(join(rendererDir, relativePath)).toString())
+    const buf = readFileSync(join(rendererDir, name))
+    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
   })
 }
 
@@ -80,8 +79,8 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.whenReady().then(() => {
-    // Registered before the spike branch so --spike=presence can load the model.
-    registerAssetProtocol()
+    // Available to both the spike windows and the normal app.
+    registerAssetReader()
 
     const spikeName = spikeNameFromArgv(process.argv)
     if (spikeName) {

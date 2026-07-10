@@ -4,7 +4,9 @@ import type { ClipMeta, SaveClipRequest, SessionInfo, Settings } from './types'
 export interface InvokeChannels {
   'app:version': { args: []; result: string }
   /** Runtime config: signaling/camera-page base URL (env-overridable for tests). */
-  'app:config': { args: []; result: { webBaseUrl: string } }
+  'app:config': { args: []; result: { webBaseUrl: string; disablePresence: boolean } }
+  /** Read a bundled renderer asset (MediaPipe model/wasm) as bytes for blob loading. */
+  'asset:read': { args: [name: string]; result: ArrayBuffer }
   'settings:get': { args: []; result: Settings }
   'settings:set': { args: [patch: Partial<Settings>]; result: Settings }
   'session:list': { args: []; result: SessionInfo[] }

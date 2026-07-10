@@ -5,32 +5,30 @@
  * `asset://` scheme under CSP (no internet) and that inference runs, on THIS
  * machine (esp. Windows). Run: ReplaySwing --spike=presence
  */
-import { FilesetResolver, ObjectDetector } from '@mediapipe/tasks-vision'
+import { ObjectDetector } from '@mediapipe/tasks-vision'
+import { loadMediapipeFileset, readAssetBytes } from '../trigger/mediapipe-assets'
 
 async function main(): Promise<void> {
   const report: Record<string, unknown> = { spike: 'presence', userAgent: navigator.userAgent }
   try {
-    const base = location.protocol === 'file:' ? 'asset://mediapipe' : '/mediapipe'
     const t0 = performance.now()
-    const fileset = await FilesetResolver.forVisionTasks(`${base}/wasm`)
+    const fileset = await loadMediapipeFileset()
+    const modelBytes = await readAssetBytes('mediapipe/efficientdet_lite0.tflite')
+    const detectorOptions = (delegate: 'GPU' | 'CPU') =>
+      ({
+        baseOptions: { modelAssetBuffer: new Uint8Array(modelBytes), delegate },
+        runningMode: 'IMAGE' as const,
+        categoryAllowlist: ['person'],
+        maxResults: 1
+      })
 
     let delegate: 'GPU' | 'CPU' = 'GPU'
     let detector: ObjectDetector
     try {
-      detector = await ObjectDetector.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: `${base}/efficientdet_lite0.tflite`, delegate: 'GPU' },
-        runningMode: 'IMAGE',
-        categoryAllowlist: ['person'],
-        maxResults: 1
-      })
+      detector = await ObjectDetector.createFromOptions(fileset, detectorOptions('GPU'))
     } catch {
       delegate = 'CPU'
-      detector = await ObjectDetector.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: `${base}/efficientdet_lite0.tflite`, delegate: 'CPU' },
-        runningMode: 'IMAGE',
-        categoryAllowlist: ['person'],
-        maxResults: 1
-      })
+      detector = await ObjectDetector.createFromOptions(fileset, detectorOptions('CPU'))
     }
     report['loaded'] = true
     report['delegate'] = delegate

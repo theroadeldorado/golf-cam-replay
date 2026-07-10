@@ -41,9 +41,7 @@ export function runSpike(name: string): void {
     if (process.env['ELECTRON_RENDERER_URL']) {
       window.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/${page}`)
     } else {
-      window.loadFile(join(__dirname, `../renderer/spike-${name}.html`), {
-        search: query
-      })
+      window.loadFile(join(__dirname, `../renderer/spike-${name}.html`), { search: query })
     }
     return window
   })

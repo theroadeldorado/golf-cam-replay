@@ -1,9 +1,9 @@
 import {
-  FilesetResolver,
   ObjectDetector,
   type ObjectDetectorOptions,
   type ObjectDetectorResult
 } from '@mediapipe/tasks-vision'
+import { loadMediapipeFileset, readAssetBytes } from './mediapipe-assets'
 
 /**
  * Person-presence detector for the trigger camera. Runs MediaPipe's
@@ -23,11 +23,6 @@ export interface PresenceState {
   atMs: number
 }
 
-/** Where the bundled model + wasm live, per environment. */
-function assetBase(): string {
-  return location.protocol === 'file:' ? 'asset://mediapipe' : '/mediapipe'
-}
-
 const DEFAULT_FPS = 7
 const DEFAULT_MIN_SCORE = 0.4
 
@@ -45,10 +40,12 @@ export class PresenceDetector {
 
   /** Load the model. Throws on failure (caller degrades to shape-only). */
   async load(): Promise<void> {
-    const base = assetBase()
-    const fileset = await FilesetResolver.forVisionTasks(`${base}/wasm`)
+    // Read the bundled wasm + model as blobs (a file:// page can't fetch them,
+    // and a custom scheme would change the app origin — see mediapipe-assets).
+    const fileset = await loadMediapipeFileset()
+    const modelBytes = await readAssetBytes('mediapipe/efficientdet_lite0.tflite')
     const options = (delegate: 'GPU' | 'CPU'): ObjectDetectorOptions => ({
-      baseOptions: { modelAssetPath: `${base}/efficientdet_lite0.tflite`, delegate },
+      baseOptions: { modelAssetBuffer: new Uint8Array(modelBytes), delegate },
       runningMode: 'VIDEO',
       categoryAllowlist: ['person'],
       scoreThreshold: this.minScore,
