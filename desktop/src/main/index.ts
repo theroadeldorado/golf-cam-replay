@@ -34,9 +34,12 @@ if (process.env['REPLAYSWING_FAKE_MEDIA']) {
 }
 
 // clip://media/<sessionId>/<file> streams saved clips/thumbnails to the
-// renderer (file:// is blocked from http-served dev pages; this works in both).
+// renderer. asset://mediapipe/... serves bundled ML model + wasm — the app
+// loads over file:// in production, where MediaPipe's own fetch() is blocked,
+// so it goes through this privileged scheme instead (same reason as clip://).
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'clip', privileges: { stream: true, supportFetchAPI: true } }
+  { scheme: 'clip', privileges: { stream: true, supportFetchAPI: true } },
+  { scheme: 'asset', privileges: { standard: true, secure: true, supportFetchAPI: true } }
 ])
 
 function registerClipProtocol(): void {
@@ -47,6 +50,19 @@ function registerClipProtocol(): void {
       return new Response('bad request', { status: 400 })
     }
     return net.fetch(pathToFileURL(join(golfDir(), relativePath)).toString())
+  })
+}
+
+function registerAssetProtocol(): void {
+  // Bundled renderer assets live next to the packaged renderer (out/renderer).
+  const rendererDir = join(__dirname, '../renderer')
+  protocol.handle('asset', (request) => {
+    const url = new URL(request.url)
+    const relativePath = decodeURIComponent(`${url.host}${url.pathname}`)
+    if (relativePath.split('/').some((part) => part === '..' || part === '')) {
+      return new Response('bad request', { status: 400 })
+    }
+    return net.fetch(pathToFileURL(join(rendererDir, relativePath)).toString())
   })
 }
 
@@ -64,6 +80,9 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.whenReady().then(() => {
+    // Registered before the spike branch so --spike=presence can load the model.
+    registerAssetProtocol()
+
     const spikeName = spikeNameFromArgv(process.argv)
     if (spikeName) {
       runSpike(spikeName)
