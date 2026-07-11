@@ -24,11 +24,14 @@ export class PhoneCameraSource {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
   private state: PhoneSourceState = 'waiting'
 
+  private readonly isPersistent: boolean
+
   constructor(
     baseUrl: string,
     private readonly callbacks: PhoneSourceCallbacks,
     sessionId?: string
   ) {
+    this.isPersistent = sessionId != null
     this.sessionId = sessionId ?? randomSessionId()
     this.signaling = new SignalingClient(baseUrl, this.sessionId)
   }
@@ -40,29 +43,44 @@ export class PhoneCameraSource {
   private pendingCandidates: RTCIceCandidateInit[] = []
 
   start(): void {
-    this.signaling.start(async (message) => {
-      if (message.type === 'offer') {
-        this.pendingCandidates = []
-        await this.handleOffer((message.payload as { sdp: string }).sdp)
-        for (const candidate of this.pendingCandidates) {
-          try { await this.peer?.addIceCandidate(candidate) } catch { /* stale */ }
-        }
-        this.pendingCandidates = []
-      } else if (message.type === 'candidate' && message.payload) {
-        if (this.peer) {
-          try {
-            await this.peer.addIceCandidate(message.payload as RTCIceCandidateInit)
-          } catch {
-            // Stale candidate from a torn-down peer generation — ignore.
-          }
-        } else {
-          this.pendingCandidates.push(message.payload as RTCIceCandidateInit)
-        }
-      } else if (message.type === 'bye') {
-        this.setState('waiting')
-        this.teardownPeer()
+    const begin = async (): Promise<void> => {
+      if (this.isPersistent) {
+        console.log('[PHONE] persistent session — flushing stale messages and pinging')
+        await this.signaling.flush()
       }
-    })
+      this.signaling.start(async (message) => {
+        await this.onSignalMessage(message)
+      })
+    }
+    void begin()
+  }
+
+  private async onSignalMessage(message: { type: string; payload: unknown }): Promise<void> {
+    if (message.type === 'offer') {
+      if (this.peer && this.peer.connectionState === 'connected') {
+        console.log('[PHONE] ignoring offer — peer already connected')
+        return
+      }
+      this.pendingCandidates = []
+      await this.handleOffer((message.payload as { sdp: string }).sdp)
+      for (const candidate of this.pendingCandidates) {
+        try { await this.peer?.addIceCandidate(candidate) } catch { /* stale */ }
+      }
+      this.pendingCandidates = []
+    } else if (message.type === 'candidate' && message.payload) {
+      if (this.peer) {
+        try {
+          await this.peer.addIceCandidate(message.payload as RTCIceCandidateInit)
+        } catch {
+          // Stale candidate from a torn-down peer generation — ignore.
+        }
+      } else {
+        this.pendingCandidates.push(message.payload as RTCIceCandidateInit)
+      }
+    } else if (message.type === 'bye') {
+      this.setState('waiting')
+      this.teardownPeer()
+    }
   }
 
   private async handleOffer(sdp: string): Promise<void> {
@@ -84,13 +102,13 @@ export class PhoneCameraSource {
       if (track.kind === 'video') {
         track.onunmute = () => console.log('[PHONE] video track unmuted')
         track.onended = () => console.log('[PHONE] video track ended')
+        if (!streamEmitted) {
+          streamEmitted = true
+          const stream = event.streams[0] ?? new MediaStream([track])
+          this.callbacks.onStream(stream)
+        }
       } else {
         console.log('[PHONE] audio track received')
-      }
-      if (!streamEmitted) {
-        streamEmitted = true
-        const stream = event.streams[0] ?? new MediaStream([track])
-        this.callbacks.onStream(stream)
       }
     }
     peer.oniceconnectionstatechange = () => {

@@ -43,13 +43,27 @@ function CameraClient() {
   const wakeLockRef = useRef<WakeLockSentinel | null>(null)
   const lastSeqRef = useRef(0)
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const gotAnswerRef = useRef(false)
+  const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const iceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const teardownPeer = useCallback(() => {
+    if (iceTimeoutRef.current) clearTimeout(iceTimeoutRef.current)
+    iceTimeoutRef.current = null
+    if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current)
+    heartbeatTimerRef.current = null
+    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+    reconnectTimerRef.current = null
+    peerRef.current?.close()
+    peerRef.current = null
+  }, [])
 
   const cleanupConnection = useCallback(() => {
     if (pollTimerRef.current) clearInterval(pollTimerRef.current)
     pollTimerRef.current = null
-    peerRef.current?.close()
-    peerRef.current = null
-  }, [])
+    teardownPeer()
+  }, [teardownPeer])
 
   const acquireWakeLock = useCallback(async () => {
     try {
@@ -58,6 +72,89 @@ function CameraClient() {
       // Wake lock is best-effort; the on-screen "keep this open" notice covers the rest.
     }
   }, [])
+
+  const createPeerAndOfferRef = useRef<() => Promise<void>>(async () => {})
+
+  const createPeerAndOffer = useCallback(async () => {
+    if (!sessionId || !streamRef.current) return
+    teardownPeer()
+    gotAnswerRef.current = false
+    setStatus('waiting-desktop')
+
+    const stream = streamRef.current
+    const peer = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    })
+    peerRef.current = peer
+
+    for (const track of stream.getTracks()) {
+      if (track.readyState === 'live') {
+        track.contentHint = 'motion'
+        peer.addTrack(track, stream)
+      }
+    }
+
+    const heartbeat = peer.createDataChannel('heartbeat')
+    heartbeatTimerRef.current = setInterval(() => {
+      if (heartbeat.readyState === 'open') heartbeat.send(String(Date.now()))
+    }, 2000)
+
+    peer.onicecandidate = (event) => {
+      void postSignal(sessionId, {
+        type: 'candidate',
+        payload: event.candidate ? event.candidate.toJSON() : null,
+      })
+    }
+
+    iceTimeoutRef.current = setTimeout(() => {
+      if (peerRef.current !== peer || peer.connectionState === 'connected') return
+      if (gotAnswerRef.current) {
+        setStatus('failed')
+      } else {
+        setStatus('waiting-desktop')
+      }
+    }, ICE_TIMEOUT_MS)
+
+    let wasConnected = false
+
+    peer.oniceconnectionstatechange = () => {
+      if (peerRef.current !== peer) return
+      if (peer.iceConnectionState === 'connected') {
+        if (iceTimeoutRef.current) clearTimeout(iceTimeoutRef.current)
+        setStatus('connected')
+      }
+    }
+
+    peer.onconnectionstatechange = () => {
+      if (peerRef.current !== peer) return
+      if (peer.connectionState === 'connected') {
+        wasConnected = true
+        if (iceTimeoutRef.current) clearTimeout(iceTimeoutRef.current)
+        setStatus('connected')
+      } else if (peer.connectionState === 'failed') {
+        if (iceTimeoutRef.current) clearTimeout(iceTimeoutRef.current)
+        if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current)
+        if (wasConnected) {
+          setStatus('connecting')
+          reconnectTimerRef.current = setTimeout(() => {
+            void createPeerAndOfferRef.current()
+          }, 3000)
+        } else {
+          setStatus('failed')
+        }
+      } else if (peer.connectionState === 'disconnected') {
+        setStatus('connecting')
+      } else if (peer.connectionState === 'closed') {
+        if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current)
+      }
+    }
+
+    const offer = await peer.createOffer()
+    await peer.setLocalDescription(offer)
+    await postSignal(sessionId, { type: 'offer', payload: { sdp: offer.sdp } })
+  }, [sessionId, teardownPeer])
+
+  createPeerAndOfferRef.current = createPeerAndOffer
 
   const connect = useCallback(async () => {
     if (!sessionId) return
@@ -82,60 +179,8 @@ function CameraClient() {
     if (videoRef.current) videoRef.current.srcObject = stream
 
     await acquireWakeLock()
-    setStatus('waiting-desktop')
+    await createPeerAndOffer()
 
-    const peer = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-    })
-    peerRef.current = peer
-    for (const track of stream.getTracks()) {
-      track.contentHint = 'motion'
-      peer.addTrack(track, stream)
-    }
-    // Heartbeat channel so the desktop can tell "phone locked" from "phone gone".
-    const heartbeat = peer.createDataChannel('heartbeat')
-    const heartbeatTimer = setInterval(() => {
-      if (heartbeat.readyState === 'open') heartbeat.send(String(Date.now()))
-    }, 2000)
-
-    peer.onicecandidate = (event) => {
-      void postSignal(sessionId, {
-        type: 'candidate',
-        payload: event.candidate ? event.candidate.toJSON() : null,
-      })
-    }
-
-    const iceTimeout = setTimeout(() => {
-      if (peer.connectionState !== 'connected') setStatus('failed')
-    }, ICE_TIMEOUT_MS)
-
-    peer.oniceconnectionstatechange = () => {
-      if (peer.iceConnectionState === 'connected') {
-        clearTimeout(iceTimeout)
-        setStatus('connected')
-      }
-    }
-
-    peer.onconnectionstatechange = () => {
-      if (peer.connectionState === 'connected') {
-        clearTimeout(iceTimeout)
-        setStatus('connected')
-      } else if (peer.connectionState === 'failed') {
-        setStatus('failed')
-        clearInterval(heartbeatTimer)
-      } else if (peer.connectionState === 'disconnected') {
-        setStatus('connecting')
-      } else if (peer.connectionState === 'closed') {
-        clearInterval(heartbeatTimer)
-      }
-    }
-
-    const offer = await peer.createOffer()
-    await peer.setLocalDescription(offer)
-    const offerPayload = { type: 'offer' as const, payload: { sdp: offer.sdp } }
-    await postSignal(sessionId, offerPayload)
-
-    let gotAnswer = false
     lastSeqRef.current = 0
     pollTimerRef.current = setInterval(async () => {
       try {
@@ -148,14 +193,20 @@ function CameraClient() {
         for (const message of messages) {
           lastSeqRef.current = Math.max(lastSeqRef.current, message.seq)
           if (message.type === 'answer') {
-            gotAnswer = true
-            setStatus('connecting')
-            const { sdp } = message.payload as { sdp: string }
-            await peer.setRemoteDescription({ type: 'answer', sdp })
+            if (!gotAnswerRef.current && peerRef.current?.signalingState === 'have-local-offer') {
+              gotAnswerRef.current = true
+              setStatus('connecting')
+              const { sdp } = message.payload as { sdp: string }
+              await peerRef.current.setRemoteDescription({ type: 'answer', sdp })
+            }
           } else if (message.type === 'candidate' && message.payload) {
-            await peer.addIceCandidate(message.payload as RTCIceCandidateInit)
-          } else if (message.type === 'ping' && !gotAnswer) {
-            await postSignal(sessionId, offerPayload)
+            try {
+              await peerRef.current?.addIceCandidate(message.payload as RTCIceCandidateInit)
+            } catch {
+              // Stale candidate from a previous peer generation — ignore.
+            }
+          } else if (message.type === 'ping') {
+            await createPeerAndOfferRef.current()
           } else if (message.type === 'bye') {
             setStatus('failed')
             cleanupConnection()
@@ -165,7 +216,7 @@ function CameraClient() {
         // Transient polling errors are fine; next tick retries.
       }
     }, POLL_INTERVAL_MS)
-  }, [sessionId, facing, acquireWakeLock, cleanupConnection])
+  }, [sessionId, facing, acquireWakeLock, cleanupConnection, createPeerAndOffer])
 
   const flipCamera = useCallback(async () => {
     const next = facing === 'environment' ? 'user' : 'environment'

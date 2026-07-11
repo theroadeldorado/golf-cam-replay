@@ -32,6 +32,20 @@ export class SignalingClient {
     return `${this.baseUrl}/api/signal/${this.sessionId}/desktop`
   }
 
+  /** Drain existing messages without processing, then send a ping to request a fresh offer. */
+  async flush(): Promise<void> {
+    try {
+      const response = await fetch(`${this.endpoint}?since=${this.since}`, { cache: 'no-store' })
+      const { messages } = (await response.json()) as { messages: (SignalMessage & { seq: number })[] }
+      for (const message of messages) {
+        this.since = Math.max(this.since, message.seq)
+      }
+      await this.send('ping', null)
+    } catch {
+      // Best-effort — polling will start fresh either way.
+    }
+  }
+
   /** Poll the desktop inbox; messages are delivered serially and in order. */
   start(onMessage: (message: SignalMessage) => Promise<void>): void {
     this.timer = setInterval(async () => {

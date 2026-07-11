@@ -320,6 +320,8 @@ export function App(): React.JSX.Element {
       disposed = true
       controllerRef.current?.dispose()
       busRef.current?.stop()
+      for (const source of phoneSourcesRef.current.values()) source.stop()
+      phoneSourcesRef.current.clear()
     }
   }, [refreshGallery])
 
