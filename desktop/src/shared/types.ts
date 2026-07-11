@@ -4,6 +4,8 @@ export interface CameraConfig {
   id: string
   kind: 'usb' | 'phone'
   label: string
+  zoom?: number
+  rotation?: number
 }
 
 export interface WindowBounds {
@@ -36,7 +38,7 @@ export interface DrawnCircle {
 
 export type DrawnShape = DrawnLine | DrawnCircle
 
-export type TriggerMode = 'audio' | 'manual'
+export type TriggerMode = 'audio' | 'hybrid' | 'manual'
 
 export interface Settings {
   preRollSec: number

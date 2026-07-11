@@ -109,21 +109,26 @@ function CameraClient() {
       if (peer.connectionState !== 'connected') setStatus('failed')
     }, ICE_TIMEOUT_MS)
 
+    peer.oniceconnectionstatechange = () => {
+      if (peer.iceConnectionState === 'connected') {
+        clearTimeout(iceTimeout)
+        setStatus('connected')
+      }
+    }
+
     peer.onconnectionstatechange = () => {
       if (peer.connectionState === 'connected') {
         clearTimeout(iceTimeout)
         setStatus('connected')
       } else if (peer.connectionState === 'failed') {
         setStatus('failed')
+        clearInterval(heartbeatTimer)
       } else if (peer.connectionState === 'disconnected') {
         setStatus('connecting')
+      } else if (peer.connectionState === 'closed') {
+        clearInterval(heartbeatTimer)
       }
     }
-
-    peer.onconnectionstatechange = ((original) => () => {
-      original()
-      if (['failed', 'closed'].includes(peer.connectionState)) clearInterval(heartbeatTimer)
-    })(peer.onconnectionstatechange.bind(peer) as () => void)
 
     const offer = await peer.createOffer()
     await peer.setLocalDescription(offer)

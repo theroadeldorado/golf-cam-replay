@@ -4,6 +4,7 @@ import { CaptureController, type ActiveCamera } from '../capture/capture-control
 import { listUsbCameras, onDeviceChange, type UsbCameraInfo } from '../cameras/usb'
 import { PhoneCameraSource } from '../cameras/phone-source'
 import type { AudioSampleEvent } from '../trigger/audio-trigger'
+import type { SwingTriggerEvent } from '../trigger/swing-trigger'
 import { ProgramBus } from '../playback/program-bus'
 import { PairingDialog, type PairingInfo } from '../ui/PairingDialog'
 import { ShareDialog, type ShareInfo } from '../ui/ShareDialog'
@@ -128,7 +129,12 @@ function CameraTile({
   draw,
   selectedId,
   onSelect,
-  onShapesChange
+  onShapesChange,
+  phoneQr,
+  zoom,
+  rotation,
+  onZoom,
+  onRotate
 }: {
   camera: ActiveCamera
   onRemove: () => void
@@ -137,29 +143,66 @@ function CameraTile({
   selectedId: string | null
   onSelect: (id: string | null) => void
   onShapesChange: (shapes: Shape[], commit: boolean) => void
+  phoneQr?: { qrDataUrl: string; url: string }
+  zoom: number
+  rotation: number
+  onZoom: (delta: number) => void
+  onRotate: () => void
 }): React.JSX.Element {
   const videoRef = useRef<HTMLVideoElement>(null)
   useEffect(() => {
     if (videoRef.current && camera.stream) videoRef.current.srcObject = camera.stream
   }, [camera.stream])
 
+  const isPhoneWaiting = camera.kind === 'phone' && camera.state === 'connecting' && phoneQr
+  const transform = zoom !== 1 || rotation !== 0
+    ? `scale(${zoom}) rotate(${rotation}deg)`
+    : undefined
+
   return (
     <div className="camera-tile">
-      <video ref={videoRef} autoPlay muted playsInline />
-      <DrawingOverlay
-        shapes={shapes}
-        active={draw.active}
-        tool={draw.tool}
-        color={draw.color}
-        videoRef={videoRef}
-        selectedId={selectedId}
-        onSelect={onSelect}
-        onChange={onShapesChange}
-      />
+      {isPhoneWaiting ? (
+        <div className="phone-waiting">
+          <img
+            src={phoneQr.qrDataUrl}
+            alt="Scan to connect"
+            style={{ width: 160, height: 160, borderRadius: 8, background: '#fff' }}
+          />
+          <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 4px', textAlign: 'center' }}>
+            Scan or open bookmark
+          </p>
+          <p style={{
+            fontSize: 10, color: 'var(--muted)', wordBreak: 'break-all',
+            fontFamily: 'var(--font-mono)', textAlign: 'center', maxWidth: 200
+          }}>
+            {phoneQr.url}
+          </p>
+        </div>
+      ) : (
+        <>
+          <video ref={videoRef} autoPlay muted playsInline style={{ transform }} />
+          <DrawingOverlay
+            shapes={shapes}
+            active={draw.active}
+            tool={draw.tool}
+            color={draw.color}
+            videoRef={videoRef}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            onChange={onShapesChange}
+          />
+        </>
+      )}
       <span className="tag">
         {camera.label} · {camera.state === 'live' ? `${camera.measuredFps} fps` : camera.state}
         {camera.error ? ` — ${camera.error}` : ''}
       </span>
+      <div className="camera-controls">
+        <button title="Zoom out" onClick={() => onZoom(-0.25)}>−</button>
+        <span>{Math.round(zoom * 100)}%</span>
+        <button title="Zoom in" onClick={() => onZoom(0.25)}>+</button>
+        <button title="Rotate 90°" onClick={onRotate}>↻</button>
+      </div>
       <button className="remove" title="Remove camera" onClick={onRemove}>
         ✕
       </button>
@@ -176,6 +219,7 @@ export function App(): React.JSX.Element {
   const [capturing, setCapturing] = useState(false)
   const [armed, setArmed] = useState(false)
   const [audio, setAudio] = useState<AudioSampleEvent | null>(null)
+  const [swing, setSwing] = useState<SwingTriggerEvent | null>(null)
   const [replay, setReplay] = useState<ReplayInfo | null>(null)
   const [pairing, setPairing] = useState<PairingInfo | null>(null)
   const [share, setShare] = useState<ShareInfo | null>(null)
@@ -190,6 +234,7 @@ export function App(): React.JSX.Element {
   const controllerRef = useRef<CaptureController | null>(null)
   const busRef = useRef<ProgramBus | null>(null)
   const phoneSourcesRef = useRef(new Map<string, PhoneCameraSource>())
+  const phoneQrUrlsRef = useRef(new Map<string, { qrDataUrl: string; url: string }>())
 
   const refreshGallery = useCallback(async (preferSession?: string) => {
     const list = await window.api.invoke('session:list')
@@ -222,6 +267,7 @@ export function App(): React.JSX.Element {
       })
       controller.on('captureStateChanged', setCapturing)
       controller.on('audioEvent', setAudio)
+      controller.on('swingEvent', setSwing)
       controller.on('clipSaved', (meta, primaryMp4) => {
         const url = URL.createObjectURL(new Blob([primaryMp4], { type: 'video/mp4' }))
         const cameraId = clipPrimaryCameraId(meta)
@@ -246,6 +292,28 @@ export function App(): React.JSX.Element {
       for (const camera of loaded.cameras) {
         if (camera.kind === 'usb') void controller.addUsbCamera(camera.id, camera.label)
       }
+
+      const { webBaseUrl } = await window.api.invoke('app:config')
+      for (const camera of loaded.cameras) {
+        if (camera.kind === 'phone') {
+          const source = new PhoneCameraSource(webBaseUrl, {
+            onState: () => {},
+            onStream: (stream) => {
+              controller.attachExternalStream(source.sessionId, camera.label, stream)
+            }
+          }, camera.id)
+          phoneSourcesRef.current.set(source.sessionId, source)
+          controller.registerPendingCamera(camera.id, 'phone', camera.label)
+          source.start()
+
+          const url = source.cameraPageUrl(webBaseUrl)
+          QRCode.toDataURL(url, { margin: 1 }).then((qrDataUrl) => {
+            phoneQrUrlsRef.current.set(camera.id, { qrDataUrl, url })
+            setCameras((prev) => [...prev])
+          })
+        }
+      }
+
       void refreshGallery()
     })()
     return () => {
@@ -290,7 +358,22 @@ export function App(): React.JSX.Element {
     const source = new PhoneCameraSource(webBaseUrl, {
       onState: (state) => {
         setPairing((current) => (current ? { ...current, state } : current))
-        if (state === 'connected') setTimeout(() => setPairing(null), 600)
+        if (state === 'connected') {
+          const current = controllerRef.current?.getCameras() ?? []
+          if (!current.some((c) => c.id === source.sessionId && c.state === 'live')) return
+          window.api.invoke('settings:get').then((latest) => {
+            if (latest.cameras.some((c) => c.id === source.sessionId)) return
+            const updated = window.api.invoke('settings:set', {
+              cameras: [...latest.cameras, { id: source.sessionId, kind: 'phone' as const, label: 'Phone' }],
+              primaryCameraId: latest.primaryCameraId ?? source.sessionId
+            })
+            updated.then((s) => {
+              setSettings(s)
+              controllerRef.current?.updateSettings(s)
+            })
+          })
+          setTimeout(() => setPairing(null), 600)
+        }
       },
       onStream: (stream) => {
         controllerRef.current?.attachExternalStream(source.sessionId, 'Phone', stream)
@@ -299,7 +382,9 @@ export function App(): React.JSX.Element {
     phoneSourcesRef.current.set(source.sessionId, source)
     source.start()
     const url = source.cameraPageUrl(webBaseUrl)
-    setPairing({ qrDataUrl: await QRCode.toDataURL(url, { margin: 1 }), url, state: 'waiting' })
+    const qrDataUrl = await QRCode.toDataURL(url, { margin: 1 })
+    phoneQrUrlsRef.current.set(source.sessionId, { qrDataUrl, url })
+    setPairing({ qrDataUrl, url, state: 'waiting' })
   }, [])
 
   const cancelPairing = useCallback(() => {
@@ -344,6 +429,20 @@ export function App(): React.JSX.Element {
       return { ...previous, drawings }
     })
   }, [])
+
+  const updateCameraConfig = useCallback(
+    (cameraId: string, patch: Partial<import('@shared/types').CameraConfig>) => {
+      setSettings((previous) => {
+        if (!previous) return previous
+        const cameras = previous.cameras.map((c) =>
+          c.id === cameraId ? { ...c, ...patch } : c
+        )
+        void window.api.invoke('settings:set', { cameras })
+        return { ...previous, cameras }
+      })
+    },
+    []
+  )
 
   const deleteSelectedShape = useCallback(() => {
     if (!drawSelection || !settings) return
@@ -486,7 +585,7 @@ export function App(): React.JSX.Element {
 
   const tally: TallyState = capturing
     ? 'capturing'
-    : armed && audio?.state === 'listening'
+    : armed && (audio?.state === 'listening' || swing?.state === 'idle' || swing?.state === 'address' || swing?.state === 'swinging')
       ? 'watching'
       : 'off'
 
@@ -562,20 +661,34 @@ export function App(): React.JSX.Element {
             </div>
           ) : (
             <div className="camera-grid" style={{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)` }}>
-              {cameras.map((camera) => (
-                <CameraTile
-                  key={camera.id}
-                  camera={camera}
-                  onRemove={() => void removeCamera(camera.id)}
-                  shapes={settings?.drawings[camera.id] ?? []}
-                  draw={draw}
-                  selectedId={drawSelection?.cameraId === camera.id ? drawSelection.shapeId : null}
-                  onSelect={(id) =>
-                    setDrawSelection(id ? { cameraId: camera.id, shapeId: id } : null)
-                  }
-                  onShapesChange={(shapes, commit) => updateDrawings(camera.id, shapes, commit)}
-                />
-              ))}
+              {cameras.map((camera) => {
+                const config = settings?.cameras.find((c) => c.id === camera.id)
+                return (
+                  <CameraTile
+                    key={camera.id}
+                    camera={camera}
+                    onRemove={() => void removeCamera(camera.id)}
+                    shapes={settings?.drawings[camera.id] ?? []}
+                    draw={draw}
+                    selectedId={drawSelection?.cameraId === camera.id ? drawSelection.shapeId : null}
+                    onSelect={(id) =>
+                      setDrawSelection(id ? { cameraId: camera.id, shapeId: id } : null)
+                    }
+                    onShapesChange={(shapes, commit) => updateDrawings(camera.id, shapes, commit)}
+                    phoneQr={phoneQrUrlsRef.current.get(camera.id)}
+                    zoom={config?.zoom ?? 1}
+                    rotation={config?.rotation ?? 0}
+                    onZoom={(delta) => {
+                      const current = config?.zoom ?? 1
+                      updateCameraConfig(camera.id, { zoom: Math.max(0.5, Math.min(4, current + delta)) })
+                    }}
+                    onRotate={() => {
+                      const current = config?.rotation ?? 0
+                      updateCameraConfig(camera.id, { rotation: (current + 90) % 360 })
+                    }}
+                  />
+                )
+              })}
             </div>
           )}
         </div>
@@ -584,6 +697,7 @@ export function App(): React.JSX.Element {
           sessions={sessions}
           selectedSession={selectedSession}
           clips={clips}
+          activeFile={replay?.fileName ?? null}
           onSelectSession={(id) => {
             setSelectedSession(id)
             void window.api.invoke('session:clips', id).then(setClips)
@@ -609,7 +723,7 @@ export function App(): React.JSX.Element {
         <div className="state-word" data-state={tally}>
           {STATE_WORD[tally]}
         </div>
-        {armed && audio && !audio.error && (
+        {armed && settings?.triggerMode === 'audio' && audio && !audio.error && (
           <>
             <div className="meter" style={{ position: 'relative' }}>
               <div
@@ -642,6 +756,18 @@ export function App(): React.JSX.Element {
         {armed && settings?.triggerMode === 'audio' && (!audio || audio.error) && (
           <span style={{ fontSize: 12, color: 'var(--error, #e55)' }}>
             {audio?.error ?? 'Opening mic…'}
+          </span>
+        )}
+        {armed && settings?.triggerMode === 'hybrid' && swing && (
+          <span style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 12,
+            color: swing.state === 'swinging' ? 'var(--lock)' : swing.state === 'address' ? 'var(--watch)' : 'var(--muted)'
+          }}>
+            {swing.state === 'idle' ? 'Waiting for stillness…'
+              : swing.state === 'address' ? 'At address — watching for swing'
+              : swing.state === 'swinging' ? 'Swing detected — listening for impact…'
+              : 'Cooldown'}
           </span>
         )}
         <button className="record-btn" onClick={recordNow} disabled={capturing || !anyLive}>

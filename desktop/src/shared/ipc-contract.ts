@@ -28,6 +28,10 @@ export interface InvokeChannels {
   'pip:toggle': { args: []; result: boolean }
   /** Relay a WebRTC loopback signaling message to the other window. */
   'pip:signal': { args: [payload: unknown]; result: void }
+  /** Get the current effective shots directory path. */
+  'dataDir:get': { args: []; result: string }
+  /** Open a native folder picker, save the chosen directory, return its path (null if cancelled). */
+  'dataDir:choose': { args: []; result: string | null }
   /** Spike/diagnostic mode only: persist a produced file to the temp dir, returns its path. */
   'spike:save-temp': { args: [fileName: string, data: ArrayBuffer]; result: string }
   /** Spike/diagnostic mode only: deliver the JSON result; main prints it and exits. */

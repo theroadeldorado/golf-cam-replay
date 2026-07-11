@@ -8,6 +8,7 @@ import type { ClipMeta, Settings } from '@shared/types'
 import type { FromWorkerMessage, WorkerInit } from './worker-protocol'
 import { openUsbCamera } from '../cameras/usb'
 import { AudioTrigger, type AudioSampleEvent } from '../trigger/audio-trigger'
+import { SwingTrigger, type SwingTriggerEvent } from '../trigger/swing-trigger'
 
 const BITRATE = 7_000_000
 const CLIP_COLLECT_TIMEOUT_MS = 12_000
@@ -44,6 +45,7 @@ interface ControllerEvents {
   clipSaved: (meta: ClipMeta, primaryMp4: ArrayBuffer) => void
   captureStateChanged: (capturing: boolean) => void
   audioEvent: (event: AudioSampleEvent) => void
+  swingEvent: (event: SwingTriggerEvent) => void
 }
 
 export class CaptureController {
@@ -54,6 +56,12 @@ export class CaptureController {
   private pending: PendingCapture | null = null
   private listeners: Partial<ControllerEvents> = {}
   private audioTrigger: AudioTrigger | null = null
+  private swingTrigger: SwingTrigger | null = null
+  private hybridAudioCtx: AudioContext | null = null
+  private hybridAnalyser: AnalyserNode | null = null
+  private hybridAudioSource: MediaStreamAudioSourceNode | null = null
+  private hybridAudioStream: MediaStream | null = null
+  private hybridAudioTimer: ReturnType<typeof setInterval> | null = null
 
   constructor(private settings: Settings) {}
 
@@ -61,12 +69,19 @@ export class CaptureController {
   setArmed(armed: boolean): void {
     this.audioTrigger?.stop()
     this.audioTrigger = null
-    if (armed && this.settings.triggerMode === 'audio') {
-      const cooldownMs = Math.max(
-        this.settings.cooldownSec * 1000,
-        this.settings.postRollSec * 1000 + 2000
-      )
+    this.stopHybridAudio()
+    this.swingTrigger?.stop()
+    this.swingTrigger = null
+    if (!armed) return
+
+    const cooldownMs = Math.max(
+      this.settings.cooldownSec * 1000,
+      this.settings.postRollSec * 1000 + 2000
+    )
+    if (this.settings.triggerMode === 'audio') {
       this.startAudioTrigger(cooldownMs)
+    } else if (this.settings.triggerMode === 'hybrid') {
+      this.startHybridTrigger(cooldownMs)
     }
   }
 
@@ -133,8 +148,81 @@ export class CaptureController {
     return null
   }
 
+  private startHybridTrigger(cooldownMs: number): void {
+    const trigger = new SwingTrigger({
+      stillnessThreshold: 0.01,
+      motionSpikeThreshold: 0.04,
+      audioConfirmThreshold: this.settings.audioThreshold,
+      addressDurationMs: 1500,
+      audioWindowMs: 500,
+      cooldownMs
+    })
+    this.swingTrigger = trigger
+    trigger.start({
+      onFire: (atMs: number) => {
+        if (!this.pending) this.triggerNow('audio', undefined, atMs)
+      },
+      onEvent: (event: SwingTriggerEvent) => this.listeners.swingEvent?.(event)
+    })
+
+    void this.startHybridAudio()
+  }
+
+  private async startHybridAudio(): Promise<void> {
+    try {
+      const source = this.resolveAudioSource()
+      let stream: MediaStream
+      if (source instanceof MediaStream) {
+        stream = source
+      } else if (source) {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { deviceId: { exact: source } },
+          video: false
+        })
+        this.hybridAudioStream = stream
+      } else {
+        const phoneMic = this.findPhoneAudioStream()
+        if (phoneMic) {
+          stream = phoneMic
+        } else {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+          this.hybridAudioStream = stream
+        }
+      }
+
+      this.hybridAudioCtx = new AudioContext()
+      this.hybridAudioSource = this.hybridAudioCtx.createMediaStreamSource(stream)
+      this.hybridAnalyser = this.hybridAudioCtx.createAnalyser()
+      this.hybridAnalyser.fftSize = 2048
+      this.hybridAudioSource.connect(this.hybridAnalyser)
+
+      const buf = new Float32Array(this.hybridAnalyser.fftSize)
+      this.hybridAudioTimer = setInterval(() => {
+        if (!this.hybridAnalyser || !this.swingTrigger) return
+        this.hybridAnalyser.getFloatTimeDomainData(buf)
+        let sum = 0
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i]
+        const level = Math.sqrt(sum / buf.length)
+        this.swingTrigger.feedAudio(level, performance.now())
+      }, 16)
+    } catch (error) {
+      console.error('[HYBRID] Failed to start audio for hybrid trigger:', error)
+    }
+  }
+
+  private stopHybridAudio(): void {
+    if (this.hybridAudioTimer) { clearInterval(this.hybridAudioTimer); this.hybridAudioTimer = null }
+    this.hybridAudioSource?.disconnect()
+    this.hybridAudioSource = null
+    this.hybridAnalyser = null
+    void this.hybridAudioCtx?.close()
+    this.hybridAudioCtx = null
+    this.hybridAudioStream?.getTracks().forEach((t) => t.stop())
+    this.hybridAudioStream = null
+  }
+
   get isArmed(): boolean {
-    return this.audioTrigger !== null
+    return this.audioTrigger !== null || this.swingTrigger !== null
   }
 
   on<K extends keyof ControllerEvents>(event: K, listener: ControllerEvents[K]): void {
@@ -177,6 +265,13 @@ export class CaptureController {
     }
   }
 
+  /** Register a camera placeholder before its stream is available. */
+  registerPendingCamera(id: string, kind: 'usb' | 'phone', label: string): void {
+    if (this.cameras.has(id)) return
+    this.cameras.set(id, { id, kind, label, state: 'connecting', stream: null, measuredFps: 0 })
+    this.emitCameras()
+  }
+
   /** Used by the phone source: hand a connected WebRTC track over. */
   attachExternalStream(id: string, label: string, stream: MediaStream): void {
     const existing = this.cameras.get(id)
@@ -190,6 +285,10 @@ export class CaptureController {
     }
     this.cameras.set(id, camera)
     this.attachStream(camera, stream)
+
+    if (this.settings.micDeviceId === id && (this.audioTrigger || this.swingTrigger)) {
+      this.setArmed(true)
+    }
   }
 
   private attachStream(camera: ActiveCamera, stream: MediaStream): void {
@@ -360,6 +459,11 @@ export class CaptureController {
           this.attachStream(camera, camera.stream)
         }
         break
+      case 'motion-energy':
+        if (this.swingTrigger && message.cameraId === this.primaryCameraId) {
+          this.swingTrigger.feedMotion(message.energy, message.wallMs)
+        }
+        break
     }
   }
 
@@ -407,6 +511,9 @@ export class CaptureController {
   dispose(): void {
     this.audioTrigger?.stop()
     this.audioTrigger = null
+    this.stopHybridAudio()
+    this.swingTrigger?.stop()
+    this.swingTrigger = null
     for (const id of [...this.cameras.keys()]) this.removeCamera(id)
   }
 }

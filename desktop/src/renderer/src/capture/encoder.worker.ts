@@ -27,6 +27,8 @@ const MAX_ENCODE_QUEUE = 6
 const STATUS_INTERVAL_MS = 1000
 const MISMATCH_TOLERANCE = 5
 const STALL_DETECT_MS = 3000
+const MOTION_WIDTH = 80
+const MOTION_HEIGHT = 45
 
 function post(message: FromWorkerMessage, transfer: Transferable[] = []): void {
   ;(self as unknown as Worker).postMessage(message, transfer)
@@ -54,6 +56,9 @@ class CaptureSession {
   private timeOffset = 0
   private lastFrameAt = 0
   private stallTimer: ReturnType<typeof setInterval> | null = null
+  private motionCanvas: OffscreenCanvas | null = null
+  private motionCtx: OffscreenCanvasRenderingContext2D | null = null
+  private prevPixels: Uint8ClampedArray | null = null
 
   async start(config: WorkerInit): Promise<void> {
     this.config = config
@@ -138,6 +143,30 @@ class CaptureSession {
     return performance.now() + this.timeOffset
   }
 
+  private computeMotionEnergy(frame: VideoFrame, wallMs: number): void {
+    if (!this.motionCanvas) {
+      this.motionCanvas = new OffscreenCanvas(MOTION_WIDTH, MOTION_HEIGHT)
+      this.motionCtx = this.motionCanvas.getContext('2d', { willReadFrequently: true })
+    }
+    const ctx = this.motionCtx
+    if (!ctx) return
+
+    ctx.drawImage(frame, 0, 0, MOTION_WIDTH, MOTION_HEIGHT)
+    const { data } = ctx.getImageData(0, 0, MOTION_WIDTH, MOTION_HEIGHT)
+
+    if (this.prevPixels) {
+      let diff = 0
+      for (let i = 0; i < data.length; i += 4) {
+        diff += Math.abs(data[i] - this.prevPixels[i])
+        diff += Math.abs(data[i + 1] - this.prevPixels[i + 1])
+        diff += Math.abs(data[i + 2] - this.prevPixels[i + 2])
+      }
+      const energy = diff / (MOTION_WIDTH * MOTION_HEIGHT * 3 * 255)
+      post({ type: 'motion-energy', cameraId: this.config.cameraId, energy, wallMs })
+    }
+    this.prevPixels = new Uint8ClampedArray(data)
+  }
+
   private handleFrame(frame: VideoFrame): void {
     this.lastFrameAt = performance.now()
     const wallMs = this.rendererNow()
@@ -182,6 +211,7 @@ class CaptureSession {
       return
     }
 
+    this.computeMotionEnergy(frame, wallMs)
     this.wallClockByTimestamp.set(frame.timestamp, wallMs)
     this.encoder.encode(frame, { keyFrame: this.frameCounter % this.config.fps === 0 })
     this.frameCounter++

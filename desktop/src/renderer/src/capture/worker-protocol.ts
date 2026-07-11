@@ -66,4 +66,11 @@ export interface WorkerStreamStalled {
   stallMs: number
 }
 
-export type FromWorkerMessage = WorkerClip | WorkerStatus | WorkerError | WorkerStreamEnded | WorkerStreamStalled
+export interface WorkerMotionEnergy {
+  type: 'motion-energy'
+  cameraId: string
+  energy: number
+  wallMs: number
+}
+
+export type FromWorkerMessage = WorkerClip | WorkerStatus | WorkerError | WorkerStreamEnded | WorkerStreamStalled | WorkerMotionEnergy

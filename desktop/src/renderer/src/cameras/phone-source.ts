@@ -17,7 +17,7 @@ export interface PhoneSourceCallbacks {
 const HEARTBEAT_STALE_MS = 8000
 
 export class PhoneCameraSource {
-  readonly sessionId = randomSessionId()
+  readonly sessionId: string
   private readonly signaling: SignalingClient
   private peer: RTCPeerConnection | null = null
   private lastHeartbeatAt = 0
@@ -26,8 +26,10 @@ export class PhoneCameraSource {
 
   constructor(
     baseUrl: string,
-    private readonly callbacks: PhoneSourceCallbacks
+    private readonly callbacks: PhoneSourceCallbacks,
+    sessionId?: string
   ) {
+    this.sessionId = sessionId ?? randomSessionId()
     this.signaling = new SignalingClient(baseUrl, this.sessionId)
   }
 
@@ -93,6 +95,11 @@ export class PhoneCameraSource {
     }
     peer.oniceconnectionstatechange = () => {
       console.log('[PHONE] ICE connection:', peer.iceConnectionState)
+      if (peer.iceConnectionState === 'connected' && this.state !== 'connected') {
+        this.setState('connected')
+      } else if (peer.iceConnectionState === 'disconnected' || peer.iceConnectionState === 'failed') {
+        this.setState('reconnecting')
+      }
     }
     peer.onconnectionstatechange = () => {
       console.log('[PHONE] connection:', peer.connectionState)

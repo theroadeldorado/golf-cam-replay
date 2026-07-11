@@ -8,6 +8,7 @@ export function Rail({
   sessions,
   selectedSession,
   clips,
+  activeFile,
   onSelectSession,
   onPlay,
   onPin,
@@ -16,6 +17,7 @@ export function Rail({
   sessions: SessionInfo[]
   selectedSession: string | null
   clips: ClipMeta[]
+  activeFile: string | null
   onSelectSession: (id: string) => void
   onPlay: (clip: ClipMeta) => void
   onPin: (index: number, pinned: boolean) => void
@@ -58,7 +60,7 @@ export function Rail({
             const index = clips.length - 1 - reverseIndex
             const shotNumber = clip.file.match(/shot_(\d+)/)?.[1] ?? String(index)
             return (
-              <button key={clip.file} className="shot-card" onClick={() => onPlay(clip)}>
+              <button key={clip.file} className={`shot-card${clip.file === activeFile ? ' active' : ''}`} onClick={() => onPlay(clip)}>
                 {clip.thumbnail && selectedSession && (
                   <img src={clipUrl(selectedSession, clip.thumbnail)} alt="" />
                 )}

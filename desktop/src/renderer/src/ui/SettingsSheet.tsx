@@ -139,11 +139,23 @@ export function SettingsSheet({
   onClose: () => void
 }): React.JSX.Element {
   const [mics, setMics] = useState<MicInfo[]>([])
+  const [dataDir, setDataDir] = useState<string>('')
+  const [dataDirChanged, setDataDirChanged] = useState(false)
+
   useEffect(() => {
     void listMics().then(setMics)
+    void window.api.invoke('dataDir:get').then(setDataDir)
   }, [])
 
-  const isAudio = (settings.triggerMode ?? 'audio') === 'audio'
+  const chooseDataDir = async (): Promise<void> => {
+    const chosen = await window.api.invoke('dataDir:choose')
+    if (chosen) {
+      setDataDir(chosen)
+      setDataDirChanged(true)
+    }
+  }
+
+  const needsMic = settings.triggerMode === 'audio' || settings.triggerMode === 'hybrid'
 
   return (
     <>
@@ -152,17 +164,41 @@ export function SettingsSheet({
         <h2>Settings</h2>
 
         <div className="field">
+          <label>Shots folder</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, opacity: 0.8, wordBreak: 'break-all', flex: 1 }}>
+              {dataDir}
+            </span>
+            <button onClick={() => void chooseDataDir()} style={{ flexShrink: 0 }}>
+              Change…
+            </button>
+          </div>
+          {dataDirChanged && (
+            <p className="hint" style={{ marginTop: 6, color: 'var(--watch)' }}>
+              Restart the app for this to take effect.
+            </p>
+          )}
+        </div>
+
+        <div className="field">
           <label>Trigger mode</label>
           <select
             value={settings.triggerMode}
             onChange={(event) => onChange({ triggerMode: event.target.value as TriggerMode })}
           >
-            <option value="audio">Audio — listens for club impact</option>
+            <option value="hybrid">Hybrid — swing motion + impact sound (Recommended)</option>
+            <option value="audio">Audio only — listens for any loud sound</option>
             <option value="manual">Manual only</option>
           </select>
+          {settings.triggerMode === 'hybrid' && (
+            <p className="hint" style={{ marginTop: 6 }}>
+              Detects address position, then swing motion, then confirms with impact sound.
+              Requires a camera pointed at the golfer.
+            </p>
+          )}
         </div>
 
-        {isAudio && (
+        {needsMic && (
           <>
             <div className="field">
               <label>Microphone</label>
@@ -172,10 +208,10 @@ export function SettingsSheet({
               >
                 <option value="">Default microphone</option>
                 {cameras
-                  .filter((c) => c.kind === 'phone' && c.state === 'live')
+                  .filter((c) => c.kind === 'phone')
                   .map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.label} (phone mic)
+                      {c.label} (phone mic{c.state !== 'live' ? ' — reconnecting…' : ''})
                     </option>
                   ))}
                 {mics.map((mic) => (

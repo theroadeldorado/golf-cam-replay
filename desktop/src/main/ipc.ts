@@ -8,6 +8,7 @@ import { deleteClip, listSessions, pinClip, readClipFile, readClips } from './cl
 import { ClipWriter } from './clip-writer'
 import { ShareServer } from './share-server'
 import { golfDir } from './paths'
+import { loadAppPrefs, saveAppPrefs } from './app-prefs'
 import { log } from './logging'
 
 function handle<C extends InvokeChannel>(
@@ -76,6 +77,23 @@ export function registerIpc(store: SettingsStore, windows: WindowRegistry): void
   const clipWriter = new ClipWriter((message) => log.info(message))
   handle('clip:save', (_sender, request) => clipWriter.saveClip(request))
   handle('session:current', () => clipWriter.currentSessionId)
+
+  handle('dataDir:get', () => golfDir())
+  handle('dataDir:choose', async (senderId) => {
+    const window =
+      BrowserWindow.getAllWindows().find((w) => w.webContents.id === senderId) ??
+      BrowserWindow.getAllWindows()[0]
+    const result = await dialog.showOpenDialog(window, {
+      title: 'Choose shots directory',
+      defaultPath: golfDir(),
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    const chosen = result.filePaths[0]
+    saveAppPrefs({ ...loadAppPrefs(), dataDir: chosen })
+    log.info(`Data directory changed to ${chosen}`)
+    return chosen
+  })
 
   handle('pip:toggle', () => windows.togglePip())
   handle('pip:signal', (senderId, payload) => {
