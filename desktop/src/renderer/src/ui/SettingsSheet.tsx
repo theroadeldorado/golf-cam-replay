@@ -1,5 +1,130 @@
-import type { Settings } from '@shared/types'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { Settings, TriggerMode } from '@shared/types'
 import type { ActiveCamera } from '../capture/capture-controller'
+
+interface MicInfo {
+  deviceId: string
+  label: string
+}
+
+async function listMics(): Promise<MicInfo[]> {
+  try {
+    await navigator.mediaDevices.getUserMedia({ audio: true })
+  } catch {
+    return []
+  }
+  const devices = await navigator.mediaDevices.enumerateDevices()
+  return devices
+    .filter((d) => d.kind === 'audioinput')
+    .map((d) => ({ deviceId: d.deviceId, label: d.label || `Mic ${d.deviceId.slice(0, 8)}` }))
+}
+
+function MicPreview({
+  micDeviceId,
+  cameras
+}: {
+  micDeviceId: string | null
+  cameras: ActiveCamera[]
+}): React.JSX.Element {
+  const [level, setLevel] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+  const cleanupRef = useRef<(() => void) | null>(null)
+
+  const startPreview = useCallback(async () => {
+    cleanupRef.current?.()
+    cleanupRef.current = null
+    setLevel(0)
+    setError(null)
+
+    let stream: MediaStream
+    try {
+      if (micDeviceId) {
+        const phoneCamera = cameras.find(
+          (c) => c.id === micDeviceId && c.kind === 'phone' && c.state === 'live' && c.stream
+        )
+        if (phoneCamera?.stream) {
+          const audioTrack = phoneCamera.stream.getAudioTracks()[0]
+          if (audioTrack) {
+            stream = new MediaStream([audioTrack])
+          } else {
+            setError('Phone has no audio — reconnect with mic permission')
+            return
+          }
+        } else {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: { deviceId: { exact: micDeviceId } },
+            video: false
+          })
+        }
+      } else {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      }
+    } catch (err) {
+      setError('No mic available')
+      return
+    }
+
+    const ctx = new AudioContext()
+    const source = ctx.createMediaStreamSource(stream)
+    const analyser = ctx.createAnalyser()
+    analyser.fftSize = 2048
+    source.connect(analyser)
+    const buf = new Float32Array(analyser.fftSize)
+    let raf = 0
+
+    const poll = (): void => {
+      analyser.getFloatTimeDomainData(buf)
+      let sum = 0
+      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i]
+      setLevel(Math.sqrt(sum / buf.length))
+      raf = requestAnimationFrame(poll)
+    }
+    raf = requestAnimationFrame(poll)
+
+    const isPhoneStream = !!cameras.find(
+      (c) => c.id === micDeviceId && c.kind === 'phone'
+    )
+
+    cleanupRef.current = () => {
+      cancelAnimationFrame(raf)
+      source.disconnect()
+      void ctx.close()
+      if (!isPhoneStream) stream.getTracks().forEach((t) => t.stop())
+    }
+  }, [micDeviceId, cameras])
+
+  useEffect(() => {
+    void startPreview()
+    return () => cleanupRef.current?.()
+  }, [startPreview])
+
+  if (error) {
+    return (
+      <div style={{ fontSize: 12, color: 'var(--error, #e55)', marginTop: 6 }}>{error}</div>
+    )
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 6,
+        height: 8,
+        borderRadius: 4,
+        background: 'var(--panel)',
+        overflow: 'hidden'
+      }}
+    >
+      <div
+        style={{
+          height: '100%',
+          width: `${Math.min(100, level * 500)}%`,
+          background: 'var(--watch)',
+          transition: 'width 50ms linear'
+        }}
+      />
+    </div>
+  )
+}
 
 export function SettingsSheet({
   settings,
@@ -12,11 +137,73 @@ export function SettingsSheet({
   onChange: (patch: Partial<Settings>) => void
   onClose: () => void
 }): React.JSX.Element {
+  const [mics, setMics] = useState<MicInfo[]>([])
+  useEffect(() => {
+    void listMics().then(setMics)
+  }, [])
+
+  const isAudio = (settings.triggerMode ?? 'audio') === 'audio'
+
   return (
     <>
       <div className="scrim" onClick={onClose} style={{ background: 'rgba(5,7,6,0.4)' }} />
       <div className="sheet">
         <h2>Settings</h2>
+
+        <div className="field">
+          <label>Trigger mode</label>
+          <select
+            value={settings.triggerMode}
+            onChange={(event) => onChange({ triggerMode: event.target.value as TriggerMode })}
+          >
+            <option value="audio">Audio — listens for club impact</option>
+            <option value="manual">Manual only</option>
+          </select>
+        </div>
+
+        {isAudio && (
+          <>
+            <div className="field">
+              <label>Microphone</label>
+              <select
+                value={settings.micDeviceId ?? ''}
+                onChange={(event) => onChange({ micDeviceId: event.target.value || null })}
+              >
+                <option value="">Default microphone</option>
+                {cameras
+                  .filter((c) => c.kind === 'phone' && c.state === 'live')
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label} (phone mic)
+                    </option>
+                  ))}
+                {mics.map((mic) => (
+                  <option key={mic.deviceId} value={mic.deviceId}>
+                    {mic.label}
+                  </option>
+                ))}
+              </select>
+              <MicPreview micDeviceId={settings.micDeviceId} cameras={cameras} />
+            </div>
+
+            <div className="field">
+              <label>Trigger threshold</label>
+              <input
+                type="range"
+                min={0.01}
+                max={0.4}
+                step={0.005}
+                value={settings.audioThreshold}
+                onChange={(event) => onChange({ audioThreshold: Number(event.target.value) })}
+              />
+              <span className="value">{settings.audioThreshold.toFixed(3)}</span>
+              <p className="hint" style={{ marginTop: 6 }}>
+                Adjust until the threshold sits above the preview bar&apos;s ambient level. Lower = more
+                sensitive.
+              </p>
+            </div>
+          </>
+        )}
 
         <div className="field">
           <label>Pre-roll — seconds kept before the trigger</label>
@@ -45,34 +232,7 @@ export function SettingsSheet({
         </div>
 
         <div className="field">
-          <label>Trigger sensitivity</label>
-          <select
-            value={settings.sensitivity}
-            onChange={(event) => onChange({ sensitivity: Number(event.target.value) as 1 | 2 | 3 })}
-          >
-            <option value={1}>Low — only hard swings fire</option>
-            <option value={2}>Medium</option>
-            <option value={3}>High — fires on soft swings</option>
-          </select>
-        </div>
-
-        <div className="field">
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, textTransform: 'none', letterSpacing: 0 }}>
-            <input
-              type="checkbox"
-              checked={settings.requirePresence}
-              onChange={(event) => onChange({ requirePresence: event.target.checked })}
-            />
-            Require a person in view
-          </label>
-          <p className="hint" style={{ marginTop: 6 }}>
-            The trigger only arms when it sees someone in the hitting zone, so it won&apos;t fire on
-            an empty bay or someone walking past. Turn off for unusual camera setups.
-          </p>
-        </div>
-
-        <div className="field">
-          <label>Trigger camera</label>
+          <label>Primary camera</label>
           <select
             value={settings.primaryCameraId ?? ''}
             onChange={(event) => onChange({ primaryCameraId: event.target.value || null })}
@@ -84,8 +244,7 @@ export function SettingsSheet({
             ))}
           </select>
           <p className="hint" style={{ marginTop: 6 }}>
-            The camera that watches for your swing. Changes apply to newly added cameras after a
-            restart.
+            The camera whose footage is used as the primary replay angle.
           </p>
         </div>
 

@@ -2,9 +2,6 @@
  * Per-camera capture worker: MediaStreamTrack → VideoEncoder (H.264) →
  * ChunkRing. On trigger, waits out the post-roll, slices the ring from the
  * keyframe covering (trigger − preRoll), muxes to MP4, and posts it back.
- *
- * Also computes the downscaled motion-energy signal for the vision trigger
- * when `motionSampleFps` > 0 (primary camera only).
  */
 import { ChunkRing } from './chunk-ring'
 import { muxChunksToMp4 } from './mp4-writer'
@@ -16,8 +13,6 @@ const CODEC_LADDER: { codec: string; hardwareAcceleration: HardwareAcceleration 
   { codec: 'avc1.4D401F', hardwareAcceleration: 'no-preference' }
 ]
 
-const MOTION_WIDTH = 160
-const MOTION_HEIGHT = 90
 const MAX_ENCODE_QUEUE = 6
 const STATUS_INTERVAL_MS = 1000
 
@@ -38,9 +33,6 @@ class CaptureSession {
   private frameCounter = 0
   private framesSinceStatus = 0
   private lastStatusAt = 0
-  private lastMotionSampleAt = 0
-  private motionCanvas: OffscreenCanvas | null = null
-  private previousLuma: Uint8ClampedArray | null = null
   private stopped = false
 
   async start(config: WorkerInit): Promise<void> {
@@ -57,10 +49,6 @@ class CaptureSession {
     })
     this.encoder.configure(encoderConfig)
 
-    if (config.motionSampleFps > 0) {
-      this.motionCanvas = new OffscreenCanvas(MOTION_WIDTH, MOTION_HEIGHT)
-    }
-
     const reader = config.frames.getReader()
     this.lastStatusAt = performance.now()
 
@@ -73,8 +61,6 @@ class CaptureSession {
       this.handleFrame(frame)
     }
 
-    // Track ended (unplug, phone lock, stop): deliver a partial clip if a
-    // trigger was in flight, so a mid-recording failure still saves footage.
     if (this.pendingTrigger) {
       await this.finishTrigger(this.pendingTrigger)
     }
@@ -105,12 +91,6 @@ class CaptureSession {
   private handleFrame(frame: VideoFrame): void {
     const wallMs = performance.now()
 
-    if (this.motionCanvas && wallMs - this.lastMotionSampleAt >= 1000 / this.config.motionSampleFps) {
-      this.lastMotionSampleAt = wallMs
-      this.sampleMotion(frame, wallMs)
-    }
-
-    // Backpressure: drop frames rather than let the encode queue run away.
     if (this.encoder.encodeQueueSize > MAX_ENCODE_QUEUE) {
       frame.close()
       return
@@ -133,45 +113,6 @@ class CaptureSession {
       this.framesSinceStatus = 0
       this.lastStatusAt = wallMs
     }
-  }
-
-  private sampleMotion(frame: VideoFrame, wallMs: number): void {
-    const ctx = this.motionCanvas!.getContext('2d', { willReadFrequently: true })!
-    const roi = this.config.motionRoi
-    if (roi) {
-      ctx.drawImage(
-        frame,
-        roi.x * this.width,
-        roi.y * this.height,
-        roi.w * this.width,
-        roi.h * this.height,
-        0,
-        0,
-        MOTION_WIDTH,
-        MOTION_HEIGHT
-      )
-    } else {
-      ctx.drawImage(frame, 0, 0, MOTION_WIDTH, MOTION_HEIGHT)
-    }
-    const { data } = ctx.getImageData(0, 0, MOTION_WIDTH, MOTION_HEIGHT)
-    const luma = new Uint8ClampedArray(MOTION_WIDTH * MOTION_HEIGHT)
-    for (let i = 0; i < luma.length; i++) {
-      const o = i * 4
-      luma[i] = (data[o] * 77 + data[o + 1] * 150 + data[o + 2] * 29) >> 8
-    }
-    if (this.previousLuma) {
-      let total = 0
-      for (let i = 0; i < luma.length; i++) {
-        total += Math.abs(luma[i] - this.previousLuma[i])
-      }
-      post({
-        type: 'motion',
-        cameraId: this.config.cameraId,
-        wallClockMs: wallMs,
-        energy: total / luma.length
-      })
-    }
-    this.previousLuma = luma
   }
 
   private onChunk(chunk: EncodedVideoChunk, meta: EncodedVideoChunkMetadata | undefined): void {
@@ -199,7 +140,7 @@ class CaptureSession {
   }
 
   trigger(message: WorkerTrigger): void {
-    if (this.pendingTrigger) return // one capture at a time; coordinator enforces cooldown
+    if (this.pendingTrigger) return
     this.pendingTrigger = message
   }
 

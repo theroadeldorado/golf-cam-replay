@@ -11,10 +11,6 @@ export interface WorkerInit {
   fps: number
   bitrate: number
   retentionMs: number
-  /** Detection sampling: 0 = disabled (non-primary cameras). */
-  motionSampleFps: number
-  /** Normalized 0–1 region of interest for motion sampling; null = full frame. */
-  motionRoi: { x: number; y: number; w: number; h: number } | null
 }
 
 export interface WorkerTrigger {
@@ -50,15 +46,6 @@ export interface WorkerStatus {
   ringChunks: number
 }
 
-/** Downscaled motion-energy sample for the vision trigger (primary camera only). */
-export interface WorkerMotion {
-  type: 'motion'
-  cameraId: string
-  wallClockMs: number
-  /** Mean absolute luma difference vs the previous sample, 0–255. */
-  energy: number
-}
-
 export interface WorkerError {
   type: 'error'
   cameraId: string
@@ -66,4 +53,4 @@ export interface WorkerError {
   fatal: boolean
 }
 
-export type FromWorkerMessage = WorkerClip | WorkerStatus | WorkerMotion | WorkerError
+export type FromWorkerMessage = WorkerClip | WorkerStatus | WorkerError

@@ -3,7 +3,7 @@ import type { ClipMeta, SessionInfo, Settings } from '@shared/types'
 import { CaptureController, type ActiveCamera } from '../capture/capture-controller'
 import { listUsbCameras, onDeviceChange, type UsbCameraInfo } from '../cameras/usb'
 import { PhoneCameraSource } from '../cameras/phone-source'
-import type { VisionSampleEvent } from '../trigger/vision-trigger'
+import type { AudioSampleEvent } from '../trigger/audio-trigger'
 import { ProgramBus } from '../playback/program-bus'
 import { PairingDialog, type PairingInfo } from '../ui/PairingDialog'
 import { ShareDialog, type ShareInfo } from '../ui/ShareDialog'
@@ -15,12 +15,11 @@ import { DrawToolbar } from '../drawing/DrawToolbar'
 import { SHAPE_COLORS, type Shape } from '../drawing/shapes'
 import QRCode from 'qrcode'
 
-type TallyState = 'off' | 'watching' | 'address' | 'capturing'
+type TallyState = 'off' | 'watching' | 'capturing'
 
 const STATE_WORD: Record<TallyState, string> = {
   off: 'Standby',
-  watching: 'Watching',
-  address: 'Set',
+  watching: 'Listening',
   capturing: 'Capture'
 }
 
@@ -176,7 +175,7 @@ export function App(): React.JSX.Element {
   const [showSettings, setShowSettings] = useState(false)
   const [capturing, setCapturing] = useState(false)
   const [armed, setArmed] = useState(false)
-  const [vision, setVision] = useState<VisionSampleEvent | null>(null)
+  const [audio, setAudio] = useState<AudioSampleEvent | null>(null)
   const [replay, setReplay] = useState<ReplayInfo | null>(null)
   const [pairing, setPairing] = useState<PairingInfo | null>(null)
   const [share, setShare] = useState<ShareInfo | null>(null)
@@ -205,7 +204,6 @@ export function App(): React.JSX.Element {
     let disposed = false
     void (async () => {
       const loaded = await window.api.invoke('settings:get')
-      const { disablePresence } = await window.api.invoke('app:config')
       if (disposed) return
       setSettings(loaded)
 
@@ -216,14 +214,14 @@ export function App(): React.JSX.Element {
         else bus.stop()
       })
 
-      const controller = new CaptureController(loaded, disablePresence)
+      const controller = new CaptureController(loaded)
       controllerRef.current = controller
       controller.on('camerasChanged', (list) => {
         setCameras(list)
         bus.setCameras(list)
       })
       controller.on('captureStateChanged', setCapturing)
-      controller.on('visionEvent', setVision)
+      controller.on('audioEvent', setAudio)
       controller.on('clipSaved', (meta, primaryMp4) => {
         const url = URL.createObjectURL(new Blob([primaryMp4], { type: 'video/mp4' }))
         const cameraId = clipPrimaryCameraId(meta)
@@ -381,8 +379,8 @@ export function App(): React.JSX.Element {
       setSettings(updated)
       const controller = controllerRef.current
       controller?.updateSettings(updated)
-      // Presence toggle only takes effect at arm time — re-arm to apply it live.
-      if ('requirePresence' in patch && controller?.isArmed) {
+      const rearmKeys: (keyof Settings)[] = ['triggerMode', 'micDeviceId']
+      if (rearmKeys.some((k) => k in patch) && controller?.isArmed) {
         controller.setArmed(false)
         controller.setArmed(true)
       }
@@ -398,7 +396,7 @@ export function App(): React.JSX.Element {
     setArmed((current) => {
       const next = !current
       controllerRef.current?.setArmed(next)
-      if (!next) setVision(null)
+      if (!next) setAudio(null)
       return next
     })
   }, [])
@@ -488,11 +486,8 @@ export function App(): React.JSX.Element {
 
   const tally: TallyState = capturing
     ? 'capturing'
-    : armed
-      ? // 'confirming' is a sub-second post-spike check — keep it green.
-        vision?.state === 'address' || vision?.state === 'confirming'
-        ? 'address'
-        : 'watching'
+    : armed && audio?.state === 'listening'
+      ? 'watching'
       : 'off'
 
   const anyLive = cameras.some((camera) => camera.state === 'live')
@@ -614,23 +609,40 @@ export function App(): React.JSX.Element {
         <div className="state-word" data-state={tally}>
           {STATE_WORD[tally]}
         </div>
-        {armed && vision && (
+        {armed && audio && !audio.error && (
           <>
-            <div className="meter">
+            <div className="meter" style={{ position: 'relative' }}>
               <div
                 style={{
-                  width: `${Math.min(100, (vision.energy / Math.max(vision.spikeThreshold, 0.01)) * 100)}%`,
-                  background: vision.state === 'address' ? 'var(--lock)' : 'var(--watch)'
+                  width: `${Math.min(100, audio.level * 500)}%`,
+                  background: audio.level >= audio.threshold
+                    ? 'var(--lock)'
+                    : 'var(--watch)'
                 }}
               />
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${Math.min(100, audio.threshold * 500)}%`,
+                  top: 0,
+                  bottom: 0,
+                  width: 2,
+                  background: 'var(--text)',
+                  opacity: 0.6
+                }}
+                title="Threshold"
+              />
             </div>
-            <span
-              data-testid="vision-state"
-              style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--muted)' }}
-            >
-              {vision.state} · e:{vision.energy.toFixed(1)} still:{vision.stillLimit.toFixed(1)} base:{vision.baseline.toFixed(1)} {vision.present ? '👤' : '—'}
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+              {audio.level.toFixed(3)} / {audio.threshold.toFixed(3)}
+              {audio.peak > 0 ? ` pk:${audio.peak.toFixed(3)}` : ''}
             </span>
           </>
+        )}
+        {armed && settings?.triggerMode === 'audio' && (!audio || audio.error) && (
+          <span style={{ fontSize: 12, color: 'var(--error, #e55)' }}>
+            {audio?.error ?? 'Opening mic…'}
+          </span>
         )}
         <button className="record-btn" onClick={recordNow} disabled={capturing || !anyLive}>
           {capturing ? 'Recording…' : 'Record now (T)'}

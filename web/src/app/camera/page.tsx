@@ -72,7 +72,7 @@ function CameraClient() {
           height: { ideal: 720 },
           frameRate: { ideal: 60, min: 30 },
         },
-        audio: false,
+        audio: true,
       })
     } catch {
       setStatus('failed')
@@ -170,7 +170,7 @@ function CameraClient() {
     try {
       const newStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: next, width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
+        audio: true,
       })
       const newTrack = newStream.getVideoTracks()[0]
       newTrack.contentHint = 'motion'

@@ -24,7 +24,7 @@ if (process.env['REPLAYSWING_DATA_DIR']) {
 }
 
 // E2E tests: synthetic camera + auto-granted permissions. An optional y4m
-// file drives the fake camera's content (used to exercise the vision trigger).
+// file drives the fake camera's content.
 if (process.env['REPLAYSWING_FAKE_MEDIA']) {
   app.commandLine.appendSwitch('use-fake-device-for-media-stream')
   app.commandLine.appendSwitch('use-fake-ui-for-media-stream')

@@ -6,13 +6,6 @@ export interface CameraConfig {
   label: string
 }
 
-export interface NormalizedRect {
-  x: number
-  y: number
-  w: number
-  h: number
-}
-
 export interface WindowBounds {
   x: number
   y: number
@@ -43,6 +36,8 @@ export interface DrawnCircle {
 
 export type DrawnShape = DrawnLine | DrawnCircle
 
+export type TriggerMode = 'audio' | 'manual'
+
 export interface Settings {
   preRollSec: number
   postRollSec: number
@@ -50,12 +45,12 @@ export interface Settings {
   fps: number
   cameras: CameraConfig[]
   primaryCameraId: string | null
-  /** Vision trigger sensitivity: 1 = low, 2 = medium, 3 = high */
-  sensitivity: 1 | 2 | 3
-  /** Require a person detected in view before the trigger can arm (address). */
-  requirePresence: boolean
-  /** Region of interest for the vision trigger, normalized 0–1 coords. null = default center region. */
-  roi: NormalizedRect | null
+  /** How auto-recording is triggered. */
+  triggerMode: TriggerMode
+  /** RMS level threshold for the audio trigger (0.01–1.0). */
+  audioThreshold: number
+  /** Microphone device id for audio trigger. null = default mic. */
+  micDeviceId: string | null
   pip: { bounds: WindowBounds | null; visible: boolean }
   mainWindowBounds: WindowBounds | null
   /** Per-camera drawing annotations, keyed by camera id. */
@@ -65,7 +60,7 @@ export interface Settings {
 /** Extra metadata v2 records per clip. Lives under the `v2` key in clips.json
  * entries so v1 readers ignore it. */
 export interface ClipMetaV2 {
-  trigger: { source: 'manual' | 'vision'; confidence?: number }
+  trigger: { source: 'manual' | 'audio'; confidence?: number }
   preRollMs: number
   postRollMs: number
   fps: number
@@ -101,7 +96,7 @@ export interface SaveClipRequest {
   primaryCameraId: string
   thumbnailJpeg: ArrayBuffer | null
   triggerWallMs: number
-  trigger: { source: 'manual' | 'vision'; confidence?: number }
+  trigger: { source: 'manual' | 'audio'; confidence?: number }
   preRollMs: number
   postRollMs: number
   fps: number

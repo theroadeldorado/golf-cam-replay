@@ -1,18 +1,13 @@
 /**
  * Orchestrates the live capture graph: one encoder worker per camera, all
- * buffering continuously into their ChunkRings. A trigger (manual now,
- * vision in M3) broadcasts a shared wall-clock timestamp to every worker,
- * collects the resulting MP4s, and hands them to main for disk writes.
+ * buffering continuously into their ChunkRings. A trigger (manual or audio)
+ * broadcasts a shared wall-clock timestamp to every worker, collects the
+ * resulting MP4s, and hands them to main for disk writes.
  */
 import type { ClipMeta, Settings } from '@shared/types'
 import type { FromWorkerMessage, WorkerInit } from './worker-protocol'
 import { openUsbCamera } from '../cameras/usb'
-import {
-  VisionTrigger,
-  STILL_DURATION_DEFAULT_MS,
-  type VisionSampleEvent
-} from '../trigger/vision-trigger'
-import { PresenceDetector } from '../trigger/presence-detector'
+import { AudioTrigger, type AudioSampleEvent } from '../trigger/audio-trigger'
 
 const BITRATE = 7_000_000
 const CLIP_COLLECT_TIMEOUT_MS = 12_000
@@ -28,12 +23,6 @@ export interface ActiveCamera {
   error?: string
 }
 
-export interface MotionSample {
-  cameraId: string
-  wallClockMs: number
-  energy: number
-}
-
 interface CollectedClip {
   cameraId: string
   mp4: ArrayBuffer
@@ -42,7 +31,7 @@ interface CollectedClip {
 
 interface PendingCapture {
   triggerWallMs: number
-  source: 'manual' | 'vision'
+  source: 'manual' | 'audio'
   confidence?: number
   expected: Set<string>
   collected: CollectedClip[]
@@ -53,9 +42,8 @@ interface PendingCapture {
 interface ControllerEvents {
   camerasChanged: (cameras: ActiveCamera[]) => void
   clipSaved: (meta: ClipMeta, primaryMp4: ArrayBuffer) => void
-  motion: (sample: MotionSample) => void
   captureStateChanged: (capturing: boolean) => void
-  visionEvent: (event: VisionSampleEvent) => void
+  audioEvent: (event: AudioSampleEvent) => void
 }
 
 export class CaptureController {
@@ -65,70 +53,90 @@ export class CaptureController {
   private thumbnailVideo: HTMLVideoElement | null = null
   private pending: PendingCapture | null = null
   private listeners: Partial<ControllerEvents> = {}
-  private visionTrigger: VisionTrigger | null = null
-  private presenceDetector: PresenceDetector | null = null
-  /** Latest presence; defaults true so a missing/failed model degrades to shape-only. */
-  private presentNow = true
+  private audioTrigger: AudioTrigger | null = null
 
-  constructor(
-    private settings: Settings,
-    private readonly disablePresence = false
-  ) {}
+  constructor(private settings: Settings) {}
 
-  /** Arm/disarm the vision trigger. Manual trigger works regardless. */
+  /** Arm/disarm the auto trigger. Manual trigger works regardless. */
   setArmed(armed: boolean): void {
     if (armed) {
-      this.visionTrigger = new VisionTrigger({
-        sensitivity: this.settings.sensitivity,
-        stillDurationMs: STILL_DURATION_DEFAULT_MS,
-        cooldownMs: Math.max(
+      if (this.settings.triggerMode === 'audio') {
+        const cooldownMs = Math.max(
           this.settings.cooldownSec * 1000,
           this.settings.postRollSec * 1000 + 2000
         )
-      })
-      this.visionTrigger.arm(performance.now())
-      this.startPresence()
+        this.startAudioTrigger(cooldownMs)
+      }
     } else {
-      this.visionTrigger?.disarm()
-      this.visionTrigger = null
-      this.stopPresence()
+      this.audioTrigger?.stop()
+      this.audioTrigger = null
     }
   }
 
-  /** Load + run the person detector on the primary camera while armed. Any
-   * failure leaves presentNow = true (shape-filter-only). */
-  private startPresence(): void {
-    this.presentNow = true
-    if (this.disablePresence || !this.settings.requirePresence) return
-    const detector = new PresenceDetector()
-    this.presenceDetector = detector
-    void detector
-      .load()
-      .then(() => {
-        if (this.presenceDetector !== detector) return // disarmed during load
-        if (this.thumbnailVideo) detector.start(this.thumbnailVideo)
-        this.presencePoll = setInterval(() => {
-          this.presentNow = detector.latest.present
-        }, 100)
+  private startAudioTrigger(cooldownMs: number): void {
+    const trigger = new AudioTrigger({
+      threshold: this.settings.audioThreshold,
+      cooldownMs
+    })
+    this.audioTrigger = trigger
+
+    const source = this.resolveAudioSource()
+
+    const callbacks = {
+      onSample: (event: import('../trigger/audio-trigger').AudioSampleEvent) =>
+        this.listeners.audioEvent?.(event),
+      onFire: (atMs: number) => {
+        if (!this.pending) this.triggerNow('audio', undefined, atMs)
+      }
+    }
+
+    void trigger
+      .start(source, callbacks)
+      .catch((error) => {
+        // Local mic failed — try falling back to a phone camera's mic.
+        const phoneMic = this.findPhoneAudioStream()
+        if (phoneMic && !(source instanceof MediaStream)) {
+          console.warn('[AUDIO] Local mic failed, falling back to phone mic')
+          return trigger.start(phoneMic, callbacks)
+        }
+        throw error
       })
       .catch((error) => {
-        this.presentNow = true
-        console.warn('Presence model unavailable — using shape-filter only:', error)
+        console.error('[AUDIO] Failed to start:', error)
+        this.audioTrigger = null
+        this.listeners.audioEvent?.({
+          state: 'disarmed',
+          level: 0,
+          threshold: this.settings.audioThreshold,
+          peak: 0,
+          error: 'No microphone available — connect a phone or plug in a mic'
+        })
       })
   }
 
-  private stopPresence(): void {
-    if (this.presencePoll) clearInterval(this.presencePoll)
-    this.presencePoll = null
-    this.presenceDetector?.dispose()
-    this.presenceDetector = null
-    this.presentNow = true
+  private resolveAudioSource(): string | MediaStream | null {
+    const micId = this.settings.micDeviceId
+    if (!micId) return null
+    const phoneCamera = this.cameras.get(micId)
+    if (phoneCamera?.kind === 'phone' && phoneCamera.stream) {
+      const audioTrack = phoneCamera.stream.getAudioTracks()[0]
+      if (audioTrack) return new MediaStream([audioTrack])
+    }
+    return micId
   }
 
-  private presencePoll: ReturnType<typeof setInterval> | null = null
+  private findPhoneAudioStream(): MediaStream | null {
+    for (const camera of this.cameras.values()) {
+      if (camera.kind === 'phone' && camera.state === 'live' && camera.stream) {
+        const audioTrack = camera.stream.getAudioTracks()[0]
+        if (audioTrack) return new MediaStream([audioTrack])
+      }
+    }
+    return null
+  }
 
   get isArmed(): boolean {
-    return this.visionTrigger !== null
+    return this.audioTrigger !== null
   }
 
   on<K extends keyof ControllerEvents>(event: K, listener: ControllerEvents[K]): void {
@@ -137,6 +145,7 @@ export class CaptureController {
 
   updateSettings(settings: Settings): void {
     this.settings = settings
+    this.audioTrigger?.updateThreshold(settings.audioThreshold)
   }
 
   getCameras(): ActiveCamera[] {
@@ -170,7 +179,7 @@ export class CaptureController {
     }
   }
 
-  /** Used by the phone source (M4): hand a connected WebRTC track over. */
+  /** Used by the phone source: hand a connected WebRTC track over. */
   attachExternalStream(id: string, label: string, stream: MediaStream): void {
     const existing = this.cameras.get(id)
     const camera: ActiveCamera = existing ?? {
@@ -186,7 +195,6 @@ export class CaptureController {
   }
 
   private attachStream(camera: ActiveCamera, stream: MediaStream): void {
-    // Re-attach (phone reconnect): retire the previous worker and track.
     const oldWorker = this.workers.get(camera.id)
     if (oldWorker) {
       oldWorker.postMessage({ type: 'stop' })
@@ -198,8 +206,6 @@ export class CaptureController {
     camera.stream = stream
     camera.state = 'live'
 
-    // Encode from a cloned track; the original renders in the UI. Tracks
-    // aren't transferable, so the frame ReadableStream crosses to the worker.
     const track = stream.getVideoTracks()[0]
     const encoderTrack = track.clone()
     this.encoderTracks.set(camera.id, encoderTrack)
@@ -217,23 +223,21 @@ export class CaptureController {
       this.emitCameras()
     }
 
-    const settings = encoderTrack.getSettings()
+    const trackSettings = encoderTrack.getSettings()
     const processor = new MediaStreamTrackProcessor({ track: encoderTrack })
-    const isPrimary = this.primaryCameraId === camera.id
     const init: WorkerInit = {
       type: 'init',
       cameraId: camera.id,
       frames: processor.readable,
-      width: settings.width ?? 1280,
-      height: settings.height ?? 720,
+      width: trackSettings.width ?? 1280,
+      height: trackSettings.height ?? 720,
       fps: this.settings.fps,
       bitrate: BITRATE,
-      retentionMs: (this.settings.preRollSec + this.settings.postRollSec) * 1000 + RING_SLACK_MS,
-      motionSampleFps: isPrimary ? 15 : 0,
-      motionRoi: isPrimary ? this.settings.roi : null
+      retentionMs: (this.settings.preRollSec + this.settings.postRollSec) * 1000 + RING_SLACK_MS
     }
     worker.postMessage(init, [processor.readable as unknown as Transferable])
 
+    const isPrimary = this.primaryCameraId === camera.id
     if (isPrimary) this.setupThumbnailSource(stream)
     this.emitCameras()
   }
@@ -247,8 +251,6 @@ export class CaptureController {
     this.thumbnailVideo.muted = true
     this.thumbnailVideo.srcObject = stream
     void this.thumbnailVideo.play().catch(() => {})
-    // If the primary camera (re)connected while armed, point presence at it.
-    if (this.presenceDetector?.available) this.presenceDetector.rebind(this.thumbnailVideo)
   }
 
   removeCamera(id: string): void {
@@ -263,7 +265,7 @@ export class CaptureController {
   }
 
   /** Fire a capture. Returns false if one is already in flight. */
-  triggerNow(source: 'manual' | 'vision', confidence?: number, atWallMs?: number): boolean {
+  triggerNow(source: 'manual' | 'audio', confidence?: number, atWallMs?: number): boolean {
     if (this.pending) return false
     const liveCameraIds = [...this.cameras.values()]
       .filter((camera) => camera.state === 'live')
@@ -319,17 +321,6 @@ export class CaptureController {
           this.emitCameras()
         }
         break
-      case 'motion': {
-        this.listeners.motion?.(message)
-        if (this.visionTrigger) {
-          const event = this.visionTrigger.sample(message.energy, message.wallClockMs, this.presentNow)
-          this.listeners.visionEvent?.(event)
-          if (event.fired && !this.pending) {
-            this.triggerNow('vision', undefined, event.firedAtMs)
-          }
-        }
-        break
-      }
       case 'clip':
         if (this.pending?.expected.has(message.cameraId)) {
           this.pending.collected.push({
@@ -347,7 +338,6 @@ export class CaptureController {
           camera.error = message.message
           this.emitCameras()
         }
-        // A camera that errors mid-capture shouldn't stall the whole clip.
         if (this.pending?.expected.has(message.cameraId) && message.fatal) {
           this.pending.expected.delete(message.cameraId)
           if (this.pending.expected.size === 0) void this.finishCapture()
@@ -394,7 +384,8 @@ export class CaptureController {
   }
 
   dispose(): void {
-    this.stopPresence()
+    this.audioTrigger?.stop()
+    this.audioTrigger = null
     for (const id of [...this.cameras.keys()]) this.removeCamera(id)
   }
 }

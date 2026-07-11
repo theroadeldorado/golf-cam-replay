@@ -31,8 +31,7 @@ export function broadcast<C extends EventChannel>(channel: C, payload: EventChan
 export function registerIpc(store: SettingsStore, windows: WindowRegistry): void {
   handle('app:version', () => __APP_VERSION__)
   handle('app:config', () => ({
-    webBaseUrl: process.env['REPLAYSWING_WEB_BASE'] ?? 'https://www.replayswing.com',
-    disablePresence: !!process.env['REPLAYSWING_DISABLE_PRESENCE']
+    webBaseUrl: process.env['REPLAYSWING_WEB_BASE'] ?? 'https://www.replayswing.com'
   }))
   handle('settings:get', () => store.get())
   handle('settings:set', (_sender, patch) => {

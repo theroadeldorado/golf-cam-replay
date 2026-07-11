@@ -15,9 +15,9 @@ export const DEFAULT_SETTINGS: Settings = {
   fps: 30,
   cameras: [],
   primaryCameraId: null,
-  sensitivity: 2,
-  requirePresence: true,
-  roi: null,
+  triggerMode: 'audio',
+  audioThreshold: 0.08,
+  micDeviceId: null,
   pip: { bounds: null, visible: false },
   mainWindowBounds: null,
   drawings: {}
