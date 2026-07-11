@@ -208,8 +208,8 @@ function CameraClient() {
           } else if (message.type === 'ping') {
             await createPeerAndOfferRef.current()
           } else if (message.type === 'bye') {
-            setStatus('failed')
-            cleanupConnection()
+            teardownPeer()
+            setStatus('waiting-desktop')
           }
         }
       } catch {

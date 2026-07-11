@@ -24,14 +24,17 @@ const STATE_WORD: Record<TallyState, string> = {
   capturing: 'Capture'
 }
 
-interface ReplayInfo {
-  url: string
+interface ReplayCamera {
+  cameraId: string
   label: string
-  /** Object URLs need revoking; clip:// URLs don't. */
+  url: string
+}
+
+interface ReplayInfo {
+  cameras: ReplayCamera[]
+  label: string
   objectUrl: boolean
-  /** Which camera's footage this is — binds the replay to that camera's drawings. */
-  cameraId: string | null
-  /** On-disk location, for share/save of the playing clip. */
+  primaryCameraId: string | null
   sessionId: string
   fileName: string
 }
@@ -54,46 +57,101 @@ function clipPrimaryCameraId(meta: ClipMeta): string | null {
 
 function ReplayStage({
   replay,
-  shapes,
+  drawings,
   draw,
-  selectedId,
-  onSelect,
+  drawSelection,
+  onDrawSelect,
   onShapesChange,
   onDismiss,
   onShare,
   onSave
 }: {
   replay: ReplayInfo
-  shapes: Shape[]
+  drawings: Record<string, Shape[]>
   draw: DrawState
-  selectedId: string | null
-  onSelect: (id: string | null) => void
-  onShapesChange: (shapes: Shape[], commit: boolean) => void
+  drawSelection: DrawSelection | null
+  onDrawSelect: (sel: DrawSelection | null) => void
+  onShapesChange: (cameraId: string, shapes: Shape[], commit: boolean) => void
   onDismiss: () => void
   onShare: () => void
   onSave: () => void
 }): React.JSX.Element {
-  const videoRef = useRef<HTMLVideoElement>(null)
+  const videoRefsMap = useRef(new Map<string, { current: HTMLVideoElement | null }>())
+  const masterRef = useRef<HTMLVideoElement | null>(null)
   const [speed, setSpeed] = useState(1)
 
+  function getVideoRef(cameraId: string): { current: HTMLVideoElement | null } {
+    let ref = videoRefsMap.current.get(cameraId)
+    if (!ref) {
+      ref = { current: null }
+      videoRefsMap.current.set(cameraId, ref)
+    }
+    return ref
+  }
+
   useEffect(() => {
-    if (videoRef.current) videoRef.current.playbackRate = speed
-  }, [speed, replay.url])
+    let raf = 0
+    const tick = (): void => {
+      const master = masterRef.current
+      if (!master) return
+      for (const [, ref] of videoRefsMap.current) {
+        const video = ref.current
+        if (video && video !== master && master.duration) {
+          if (Math.abs(video.currentTime - master.currentTime) > 0.05) {
+            video.currentTime = master.currentTime
+          }
+        }
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  useEffect(() => {
+    for (const [, ref] of videoRefsMap.current) {
+      if (ref.current) ref.current.playbackRate = speed
+    }
+  }, [speed])
+
+  const gridColumns = replay.cameras.length <= 1 ? 1 : 2
 
   return (
     <div className="replay-stage">
-      <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex' }}>
-        <video ref={videoRef} src={replay.url} autoPlay loop muted playsInline />
-        <DrawingOverlay
-          shapes={shapes}
-          active={draw.active}
-          tool={draw.tool}
-          color={draw.color}
-          videoRef={videoRef}
-          selectedId={selectedId}
-          onSelect={onSelect}
-          onChange={onShapesChange}
-        />
+      <div
+        className="camera-grid replay-grid"
+        style={{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)` }}
+      >
+        {replay.cameras.map((cam) => {
+          const ref = getVideoRef(cam.cameraId)
+          return (
+            <div key={cam.cameraId} className="camera-tile replay-tile">
+              <video
+                ref={(el) => {
+                  ref.current = el
+                  if (cam.cameraId === replay.primaryCameraId) masterRef.current = el
+                  else if (!replay.primaryCameraId && replay.cameras[0]?.cameraId === cam.cameraId) masterRef.current = el
+                }}
+                src={cam.url}
+                autoPlay
+                loop
+                muted
+                playsInline
+              />
+              <DrawingOverlay
+                shapes={drawings[cam.cameraId] ?? []}
+                active={draw.active}
+                tool={draw.tool}
+                color={draw.color}
+                videoRef={ref}
+                selectedId={drawSelection?.cameraId === cam.cameraId ? drawSelection.shapeId : null}
+                onSelect={(id) => onDrawSelect(id ? { cameraId: cam.cameraId, shapeId: id } : null)}
+                onChange={(shapes, commit) => onShapesChange(cam.cameraId, shapes, commit)}
+              />
+              <span className="tag">{cam.label}</span>
+            </div>
+          )
+        })}
       </div>
       <div className="replay-caption">
         <strong>{replay.label}</strong>
@@ -231,6 +289,7 @@ export function App(): React.JSX.Element {
   const [clips, setClips] = useState<ClipMeta[]>([])
   // Comparison lives in a self-contained modal with a dropdown per pane.
   const [compareOptions, setCompareOptions] = useState<CompareOption[] | null>(null)
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const controllerRef = useRef<CaptureController | null>(null)
   const busRef = useRef<ProgramBus | null>(null)
   const phoneSourcesRef = useRef(new Map<string, PhoneCameraSource>())
@@ -258,6 +317,7 @@ export function App(): React.JSX.Element {
         if (visible) void bus.start()
         else bus.stop()
       })
+      window.api.on('update:ready', ({ version }) => setUpdateVersion(version))
 
       const controller = new CaptureController(loaded)
       controllerRef.current = controller
@@ -268,23 +328,30 @@ export function App(): React.JSX.Element {
       controller.on('captureStateChanged', setCapturing)
       controller.on('audioEvent', setAudio)
       controller.on('swingEvent', setSwing)
-      controller.on('clipSaved', (meta, primaryMp4) => {
-        const url = URL.createObjectURL(new Blob([primaryMp4], { type: 'video/mp4' }))
-        const cameraId = clipPrimaryCameraId(meta)
+      controller.on('clipSaved', (meta, cameraMp4s) => {
+        const replayCameras = cameraMp4s.map((c) => ({
+          cameraId: c.cameraId,
+          label: meta.camera_labels[c.cameraId] ?? c.cameraId,
+          url: URL.createObjectURL(new Blob([c.mp4], { type: 'video/mp4' }))
+        }))
+        const primaryCameraId = clipPrimaryCameraId(meta)
+        const primaryUrl = replayCameras.find((c) => c.cameraId === primaryCameraId)?.url ?? replayCameras[0]?.url
         void window.api.invoke('session:current').then((sessionId) => {
           setReplay((previous) => {
-            if (previous?.objectUrl) URL.revokeObjectURL(previous.url)
+            if (previous?.objectUrl) {
+              for (const cam of previous.cameras) URL.revokeObjectURL(cam.url)
+            }
             return {
-              url,
+              cameras: replayCameras,
               label: `Saved ${meta.file}`,
               objectUrl: true,
-              cameraId,
+              primaryCameraId,
               sessionId: sessionId ?? '',
               fileName: meta.file
             }
           })
         })
-        bus.setReplayUrl(url, cameraId)
+        if (primaryUrl) bus.setReplayUrl(primaryUrl, primaryCameraId)
         void refreshGallery()
       })
 
@@ -504,7 +571,9 @@ export function App(): React.JSX.Element {
 
   const dismissReplay = useCallback(() => {
     setReplay((previous) => {
-      if (previous?.objectUrl) URL.revokeObjectURL(previous.url)
+      if (previous?.objectUrl) {
+        for (const cam of previous.cameras) URL.revokeObjectURL(cam.url)
+      }
       return null
     })
     busRef.current?.setReplayUrl(null)
@@ -533,23 +602,31 @@ export function App(): React.JSX.Element {
   const playClip = useCallback(
     async (clip: ClipMeta) => {
       if (!selectedSession) return
-      const cameraId = clipPrimaryCameraId(clip)
-      // Play from an in-memory blob, same proven path as instant replay —
-      // <video> can't stream the clip:// protocol reliably.
-      const bytes = await window.api.invoke('clip:read', selectedSession, clip.file)
-      const url = URL.createObjectURL(new Blob([bytes], { type: 'video/mp4' }))
+      const primaryCameraId = clipPrimaryCameraId(clip)
+      const replayCameras: ReplayCamera[] = []
+      for (const [camId, fileName] of Object.entries(clip.camera_files)) {
+        const bytes = await window.api.invoke('clip:read', selectedSession, fileName)
+        replayCameras.push({
+          cameraId: camId,
+          label: clip.camera_labels[camId] ?? camId,
+          url: URL.createObjectURL(new Blob([bytes], { type: 'video/mp4' }))
+        })
+      }
+      const primaryUrl = replayCameras.find((c) => c.cameraId === primaryCameraId)?.url ?? replayCameras[0]?.url
       setReplay((previous) => {
-        if (previous?.objectUrl) URL.revokeObjectURL(previous.url)
+        if (previous?.objectUrl) {
+          for (const cam of previous.cameras) URL.revokeObjectURL(cam.url)
+        }
         return {
-          url,
+          cameras: replayCameras,
           label: clip.file,
           objectUrl: true,
-          cameraId,
+          primaryCameraId,
           sessionId: selectedSession,
           fileName: clip.file
         }
       })
-      busRef.current?.setReplayUrl(url, cameraId)
+      if (primaryUrl) busRef.current?.setReplayUrl(primaryUrl, primaryCameraId)
     },
     [selectedSession]
   )
@@ -561,7 +638,17 @@ export function App(): React.JSX.Element {
     const options: CompareOption[] = []
     for (const session of sessionList) {
       const sessionClips = await window.api.invoke('session:clips', session.id)
-      sessionClips.forEach((clip) => options.push({ sessionId: session.id, clip }))
+      for (const clip of sessionClips) {
+        for (const [cameraId, fileName] of Object.entries(clip.camera_files)) {
+          options.push({
+            sessionId: session.id,
+            clip,
+            cameraId,
+            cameraLabel: clip.camera_labels[cameraId] ?? cameraId,
+            fileName
+          })
+        }
+      }
     }
     setCompareOptions(options)
   }, [])
@@ -616,6 +703,14 @@ export function App(): React.JSX.Element {
         </button>
       </header>
 
+      {updateVersion && (
+        <div className="update-banner">
+          <span>Version {updateVersion} is ready</span>
+          <button onClick={() => void window.api.invoke('update:install')}>Restart &amp; update</button>
+          <button className="dismiss" onClick={() => setUpdateVersion(null)}>Later</button>
+        </div>
+      )}
+
       <div className="main">
         <div className="stage" style={{ position: 'relative' }}>
           {(cameras.length > 0 || replay) && (
@@ -638,17 +733,11 @@ export function App(): React.JSX.Element {
           {replay ? (
             <ReplayStage
               replay={replay}
-              shapes={replay.cameraId ? (settings?.drawings[replay.cameraId] ?? []) : []}
+              drawings={settings?.drawings ?? {}}
               draw={draw}
-              selectedId={drawSelection?.cameraId === replay.cameraId ? drawSelection.shapeId : null}
-              onSelect={(id) =>
-                setDrawSelection(
-                  id && replay.cameraId ? { cameraId: replay.cameraId, shapeId: id } : null
-                )
-              }
-              onShapesChange={(shapes, commit) => {
-                if (replay.cameraId) updateDrawings(replay.cameraId, shapes, commit)
-              }}
+              drawSelection={drawSelection}
+              onDrawSelect={setDrawSelection}
+              onShapesChange={updateDrawings}
               onDismiss={dismissReplay}
               onShare={() => void shareClip(replay)}
               onSave={() => void saveClip(replay)}

@@ -42,7 +42,7 @@ interface PendingCapture {
 
 interface ControllerEvents {
   camerasChanged: (cameras: ActiveCamera[]) => void
-  clipSaved: (meta: ClipMeta, primaryMp4: ArrayBuffer) => void
+  clipSaved: (meta: ClipMeta, cameraMp4s: { cameraId: string; mp4: ArrayBuffer }[]) => void
   captureStateChanged: (capturing: boolean) => void
   audioEvent: (event: AudioSampleEvent) => void
   swingEvent: (event: SwingTriggerEvent) => void
@@ -500,8 +500,7 @@ export class CaptureController {
     })
     console.log(`[CAPTURE] saved to disk in ${(performance.now() - saveStart).toFixed(0)}ms — clip ready`)
 
-    const primaryMp4 = pending.collected.find((clip) => clip.cameraId === primaryId)!.mp4
-    this.listeners.clipSaved?.(meta, primaryMp4)
+    this.listeners.clipSaved?.(meta, pending.collected.map((c) => ({ cameraId: c.cameraId, mp4: c.mp4 })))
   }
 
   private emitCameras(): void {

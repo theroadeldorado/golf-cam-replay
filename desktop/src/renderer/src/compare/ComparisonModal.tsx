@@ -5,6 +5,9 @@ import { needsCorrection, nudgeOffsetFrames, slaveTargetTime, stepFrame } from '
 export interface CompareOption {
   sessionId: string
   clip: ClipMeta
+  cameraId: string
+  cameraLabel: string
+  fileName: string
 }
 
 const SPEEDS = [0.25, 0.5, 1] as const
@@ -27,8 +30,10 @@ function sessionLabel(sessionId: string): string {
   })
 }
 
-function shotLabel(clip: ClipMeta): string {
-  return `Shot ${Number(clip.file.match(/shot_(\d+)/)?.[1] ?? 0) + 1}`
+function shotLabel(option: CompareOption): string {
+  const shotNum = Number(option.clip.file.match(/shot_(\d+)/)?.[1] ?? 0) + 1
+  const multiCam = Object.keys(option.clip.camera_files).length > 1
+  return multiCam ? `Shot ${shotNum} — ${option.cameraLabel}` : `Shot ${shotNum}`
 }
 
 /** Group options by session, preserving the incoming (newest-first) order. */
@@ -40,7 +45,7 @@ function groupBySession(options: CompareOption[]): { sessionId: string; label: s
       group = { sessionId: option.sessionId, label: sessionLabel(option.sessionId), items: [] }
       groups.push(group)
     }
-    group.items.push({ index, label: shotLabel(option.clip) })
+    group.items.push({ index, label: shotLabel(option) })
   })
   return groups
 }
@@ -55,7 +60,7 @@ function useClipUrl(option: CompareOption | null): string | undefined {
     }
     let made: string | null = null
     let cancelled = false
-    void window.api.invoke('clip:read', option.sessionId, option.clip.file).then((bytes) => {
+    void window.api.invoke('clip:read', option.sessionId, option.fileName).then((bytes) => {
       if (cancelled) return
       made = URL.createObjectURL(new Blob([bytes], { type: 'video/mp4' }))
       setUrl(made)
@@ -214,7 +219,7 @@ export function ComparisonModal({
         <video ref={ref} data-testid={`compare-video-${side}`} src={url} muted playsInline loop />
         {option && (
           <span className="compare-caption">
-            {sessionLabel(option.sessionId)} · {shotLabel(option.clip)}
+            {sessionLabel(option.sessionId)} · {shotLabel(option)}
           </span>
         )}
       </div>

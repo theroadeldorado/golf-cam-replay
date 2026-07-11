@@ -142,6 +142,34 @@ button:focus-visible {
   color: var(--ink);
 }
 
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: #1a2a20;
+  border-bottom: 1px solid var(--lock);
+  font-size: 13px;
+  flex: none;
+}
+
+.update-banner button {
+  padding: 4px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--lock);
+  background: var(--lock);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.update-banner button.dismiss {
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--line);
+}
+
 
 .main {
   flex: 1;
@@ -276,12 +304,18 @@ button:focus-visible {
   gap: 10px;
 }
 
-.replay-stage video {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  background: #000;
+.replay-grid {
+  border: 1px solid var(--lock);
   border-radius: 8px;
+  overflow: hidden;
+}
+
+.replay-tile {
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.replay-tile video {
   border: 1px solid var(--lock);
 }
 

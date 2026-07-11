@@ -159,7 +159,9 @@ export class PhoneCameraSource {
   }
 
   stop(): void {
-    void this.signaling.send('bye', null)
+    if (this.state === 'connected' || this.state === 'reconnecting') {
+      void this.signaling.send('bye', null)
+    }
     this.signaling.stop()
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
     this.teardownPeer()
