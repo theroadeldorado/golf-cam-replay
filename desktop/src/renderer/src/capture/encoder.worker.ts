@@ -2,6 +2,16 @@
  * Per-camera capture worker: MediaStreamTrack → VideoEncoder (H.264) →
  * ChunkRing. On trigger, waits out the post-roll, slices the ring from the
  * keyframe covering (trigger − preRoll), muxes to MP4, and posts it back.
+ *
+ * Phone cameras ramp through several resolutions during WebRTC negotiation
+ * (e.g. 180×320 → 360×640 → 720×1280). Rather than locking to one resolution,
+ * we accept sustained changes: if 5+ consecutive frames arrive at new
+ * dimensions, we close the old encoder, create a fresh one, and clear the ring.
+ * Brief blips (phone vibration) are absorbed by the tolerance threshold.
+ *
+ * We never call encoder.configure() on an already-running encoder — Chromium's
+ * hardware H.264 path stalls when reconfigured mid-stream. Every resolution
+ * change produces a brand-new VideoEncoder instance.
  */
 import { ChunkRing } from './chunk-ring'
 import { muxChunksToMp4 } from './mp4-writer'
@@ -15,6 +25,8 @@ const CODEC_LADDER: { codec: string; hardwareAcceleration: HardwareAcceleration 
 
 const MAX_ENCODE_QUEUE = 6
 const STATUS_INTERVAL_MS = 1000
+const MISMATCH_TOLERANCE = 5
+const STALL_DETECT_MS = 3000
 
 function post(message: FromWorkerMessage, transfer: Transferable[] = []): void {
   ;(self as unknown as Worker).postMessage(message, transfer)
@@ -22,32 +34,42 @@ function post(message: FromWorkerMessage, transfer: Transferable[] = []): void {
 
 class CaptureSession {
   private ring!: ChunkRing
-  private encoder!: VideoEncoder
+  private encoder: VideoEncoder | null = null
   private config!: WorkerInit
   private width = 0
   private height = 0
   private description: AllowSharedBufferSource | undefined
-  /** Maps encoder timestamps to the wall clock captured at encode() time. */
   private wallClockByTimestamp = new Map<number, number>()
   private pendingTrigger: WorkerTrigger | null = null
+  private triggerSafetyTimer: ReturnType<typeof setTimeout> | null = null
   private frameCounter = 0
   private framesSinceStatus = 0
   private lastStatusAt = 0
   private stopped = false
+  private mismatchCount = 0
+  private mismatchWidth = 0
+  private mismatchHeight = 0
+  private workedCodec: { codec: string; hardwareAcceleration: HardwareAcceleration } | null = null
+  /** Offset to add to worker's performance.now() to align with renderer clock. */
+  private timeOffset = 0
+  private lastFrameAt = 0
+  private stallTimer: ReturnType<typeof setInterval> | null = null
 
   async start(config: WorkerInit): Promise<void> {
     this.config = config
-    this.width = config.width
-    this.height = config.height
     this.ring = new ChunkRing(config.retentionMs)
+    this.timeOffset = config.rendererNowMs - performance.now()
+    this.lastFrameAt = performance.now()
 
-    const encoderConfig = await this.pickEncoderConfig()
-    this.encoder = new VideoEncoder({
-      output: (chunk, meta) => this.onChunk(chunk, meta),
-      error: (error) =>
-        post({ type: 'error', cameraId: this.config.cameraId, message: String(error), fatal: true })
-    })
-    this.encoder.configure(encoderConfig)
+    this.stallTimer = setInterval(() => {
+      if (this.stopped) return
+      const gap = performance.now() - this.lastFrameAt
+      if (gap >= STALL_DETECT_MS && this.frameCounter > 0) {
+        console.warn(`[WORKER ${this.config.cameraId.slice(0, 8)}] stream stalled for ${(gap / 1000).toFixed(1)}s — notifying controller`)
+        post({ type: 'stream-stalled', cameraId: this.config.cameraId, stallMs: gap })
+        this.stop()
+      }
+    }, STALL_DETECT_MS)
 
     const reader = config.frames.getReader()
     this.lastStatusAt = performance.now()
@@ -56,6 +78,10 @@ class CaptureSession {
       const { done, value: frame } = await reader.read()
       if (done || this.stopped) {
         frame?.close()
+        if (done && !this.stopped) {
+          console.warn(`[WORKER ${this.config.cameraId.slice(0, 8)}] ReadableStream ended unexpectedly (ring=${this.ring.size} frames=${this.frameCounter})`)
+          post({ type: 'stream-ended', cameraId: this.config.cameraId })
+        }
         break
       }
       this.handleFrame(frame)
@@ -66,30 +92,90 @@ class CaptureSession {
     }
   }
 
-  private async pickEncoderConfig(): Promise<VideoEncoderConfig> {
-    for (const candidate of CODEC_LADDER) {
-      const config: VideoEncoderConfig = {
-        codec: candidate.codec,
-        width: this.width,
-        height: this.height,
-        bitrate: this.config.bitrate,
-        framerate: this.config.fps,
-        hardwareAcceleration: candidate.hardwareAcceleration,
-        latencyMode: 'realtime',
-        avc: { format: 'avc' }
-      }
+  private createEncoder(width: number, height: number): void {
+    try { this.encoder?.close() } catch { /* already closed */ }
+    this.encoder = null
+    this.width = width
+    this.height = height
+    this.frameCounter = 0
+    this.ring.clear()
+    this.wallClockByTimestamp.clear()
+
+    const candidates = this.workedCodec ? [this.workedCodec, ...CODEC_LADDER] : CODEC_LADDER
+
+    for (const candidate of candidates) {
       try {
-        const support = await VideoEncoder.isConfigSupported(config)
-        if (support.supported) return config
+        const encoder = new VideoEncoder({
+          output: (chunk, meta) => this.onChunk(chunk, meta),
+          error: (error) => {
+            console.error(`[WORKER ${this.config.cameraId.slice(0, 8)}] ENCODER ERROR: ${error}`)
+            post({ type: 'error', cameraId: this.config.cameraId, message: String(error), fatal: true })
+          }
+        })
+        encoder.configure({
+          codec: candidate.codec,
+          width,
+          height,
+          bitrate: this.config.bitrate,
+          framerate: this.config.fps,
+          hardwareAcceleration: candidate.hardwareAcceleration,
+          latencyMode: 'realtime',
+          avc: { format: 'avc' }
+        })
+        this.encoder = encoder
+        this.workedCodec = candidate
+        console.log(`[WORKER ${this.config.cameraId.slice(0, 8)}] encoder created at ${width}x${height} (${candidate.codec}, ${candidate.hardwareAcceleration})`)
+        return
       } catch {
         continue
       }
     }
-    throw new Error('no supported H.264 encoder configuration')
+    console.error(`[WORKER ${this.config.cameraId.slice(0, 8)}] no supported encoder for ${width}x${height}`)
+  }
+
+  /** performance.now() aligned to the renderer's clock. */
+  private rendererNow(): number {
+    return performance.now() + this.timeOffset
   }
 
   private handleFrame(frame: VideoFrame): void {
-    const wallMs = performance.now()
+    this.lastFrameAt = performance.now()
+    const wallMs = this.rendererNow()
+    const fw = frame.displayWidth
+    const fh = frame.displayHeight
+
+    if (!this.encoder) {
+      console.log(`[WORKER ${this.config.cameraId.slice(0, 8)}] first frame: ${fw}x${fh}, creating encoder`)
+      this.createEncoder(fw, fh)
+      if (!this.encoder) {
+        frame.close()
+        return
+      }
+    }
+
+    if (fw !== this.width || fh !== this.height) {
+      if (fw === this.mismatchWidth && fh === this.mismatchHeight) {
+        this.mismatchCount++
+      } else {
+        this.mismatchWidth = fw
+        this.mismatchHeight = fh
+        this.mismatchCount = 1
+      }
+      if (this.mismatchCount >= MISMATCH_TOLERANCE) {
+        console.log(`[WORKER ${this.config.cameraId.slice(0, 8)}] resolution change ${this.width}x${this.height} → ${fw}x${fh} (sustained ${this.mismatchCount} frames, recreating encoder)`)
+        this.mismatchCount = 0
+        this.createEncoder(fw, fh)
+        if (!this.encoder) {
+          frame.close()
+          return
+        }
+      } else {
+        frame.close()
+        return
+      }
+    } else {
+      this.mismatchCount = 0
+    }
 
     if (this.encoder.encodeQueueSize > MAX_ENCODE_QUEUE) {
       frame.close()
@@ -119,7 +205,7 @@ class CaptureSession {
     if (meta?.decoderConfig?.description) {
       this.description = meta.decoderConfig.description
     }
-    const wallClockMs = this.wallClockByTimestamp.get(chunk.timestamp) ?? performance.now()
+    const wallClockMs = this.wallClockByTimestamp.get(chunk.timestamp) ?? this.rendererNow()
     this.wallClockByTimestamp.delete(chunk.timestamp)
 
     const data = new Uint8Array(chunk.byteLength)
@@ -134,20 +220,38 @@ class CaptureSession {
 
     const trigger = this.pendingTrigger
     if (trigger && wallClockMs >= trigger.triggerWallMs + trigger.postRollMs) {
+      console.log(`[WORKER ${this.config.cameraId.slice(0, 8)}] post-roll complete (waited ${(wallClockMs - trigger.triggerWallMs).toFixed(0)}ms)`)
       this.pendingTrigger = null
+      if (this.triggerSafetyTimer) { clearTimeout(this.triggerSafetyTimer); this.triggerSafetyTimer = null }
       void this.finishTrigger(trigger)
     }
   }
 
   trigger(message: WorkerTrigger): void {
     if (this.pendingTrigger) return
+    console.log(`[WORKER ${this.config.cameraId.slice(0, 8)}] trigger received postRoll=${message.postRollMs}ms ring=${this.ring.size} chunks dims=${this.width}x${this.height}`)
     this.pendingTrigger = message
+    this.triggerSafetyTimer = setTimeout(() => {
+      if (this.pendingTrigger) {
+        console.warn(`[WORKER ${this.config.cameraId.slice(0, 8)}] safety timeout — frames stalled, muxing what we have`)
+        const t = this.pendingTrigger
+        this.pendingTrigger = null
+        void this.finishTrigger(t)
+      }
+    }, message.postRollMs + 3000)
   }
 
   private async finishTrigger(trigger: WorkerTrigger): Promise<void> {
     try {
+      if (!this.encoder) return
+      const t0 = performance.now()
       await this.encoder.flush()
-      const slice = this.ring.sliceFrom(trigger.triggerWallMs - trigger.preRollMs)
+      const flushMs = performance.now() - t0
+      const head = this.ring.peekHead()
+      const tail = this.ring.peekTail()
+      const sliceTarget = trigger.triggerWallMs - trigger.preRollMs
+      console.log(`[WORKER ${this.config.cameraId.slice(0, 8)}] finishTrigger: ring=${this.ring.size} triggerWallMs=${trigger.triggerWallMs.toFixed(0)} sliceTarget=${sliceTarget.toFixed(0)} head.wall=${head?.wallClockMs.toFixed(0)} tail.wall=${tail?.wallClockMs.toFixed(0)} dims=${this.width}x${this.height}`)
+      const slice = this.ring.sliceFrom(sliceTarget)
       if (slice.length === 0) {
         post({
           type: 'error',
@@ -157,7 +261,11 @@ class CaptureSession {
         })
         return
       }
+      console.log(`[WORKER ${this.config.cameraId.slice(0, 8)}] slice: ${slice.length} frames, first.wall=${slice[0].wallClockMs.toFixed(0)} last.wall=${slice[slice.length - 1].wallClockMs.toFixed(0)} span=${((slice[slice.length - 1].wallClockMs - slice[0].wallClockMs) / 1000).toFixed(2)}s`)
+      const t1 = performance.now()
       const mp4 = muxChunksToMp4(slice, this.width, this.height, this.description)
+      const muxMs = performance.now() - t1
+      console.log(`[WORKER ${this.config.cameraId.slice(0, 8)}] muxed ${slice.length} frames → ${(mp4.byteLength / 1_048_576).toFixed(2)}MB (flush=${flushMs.toFixed(0)}ms mux=${muxMs.toFixed(0)}ms)`)
       post(
         {
           type: 'clip',
@@ -177,6 +285,7 @@ class CaptureSession {
 
   stop(): void {
     this.stopped = true
+    if (this.stallTimer) { clearInterval(this.stallTimer); this.stallTimer = null }
     try {
       this.encoder?.close()
     } catch {

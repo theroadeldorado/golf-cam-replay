@@ -59,17 +59,14 @@ export class CaptureController {
 
   /** Arm/disarm the auto trigger. Manual trigger works regardless. */
   setArmed(armed: boolean): void {
-    if (armed) {
-      if (this.settings.triggerMode === 'audio') {
-        const cooldownMs = Math.max(
-          this.settings.cooldownSec * 1000,
-          this.settings.postRollSec * 1000 + 2000
-        )
-        this.startAudioTrigger(cooldownMs)
-      }
-    } else {
-      this.audioTrigger?.stop()
-      this.audioTrigger = null
+    this.audioTrigger?.stop()
+    this.audioTrigger = null
+    if (armed && this.settings.triggerMode === 'audio') {
+      const cooldownMs = Math.max(
+        this.settings.cooldownSec * 1000,
+        this.settings.postRollSec * 1000 + 2000
+      )
+      this.startAudioTrigger(cooldownMs)
     }
   }
 
@@ -118,9 +115,10 @@ export class CaptureController {
     const micId = this.settings.micDeviceId
     if (!micId) return null
     const phoneCamera = this.cameras.get(micId)
-    if (phoneCamera?.kind === 'phone' && phoneCamera.stream) {
-      const audioTrack = phoneCamera.stream.getAudioTracks()[0]
+    if (phoneCamera?.kind === 'phone') {
+      const audioTrack = phoneCamera.stream?.getAudioTracks()[0]
       if (audioTrack) return new MediaStream([audioTrack])
+      return null
     }
     return micId
   }
@@ -233,7 +231,8 @@ export class CaptureController {
       height: trackSettings.height ?? 720,
       fps: this.settings.fps,
       bitrate: BITRATE,
-      retentionMs: (this.settings.preRollSec + this.settings.postRollSec) * 1000 + RING_SLACK_MS
+      retentionMs: (this.settings.preRollSec + this.settings.postRollSec) * 1000 + RING_SLACK_MS,
+      rendererNowMs: performance.now()
     }
     worker.postMessage(init, [processor.readable as unknown as Transferable])
 
@@ -273,6 +272,7 @@ export class CaptureController {
     if (liveCameraIds.length === 0) return false
 
     const triggerWallMs = atWallMs ?? performance.now()
+    console.log(`[CAPTURE] trigger fired source=${source} cameras=${liveCameraIds.length} postRoll=${this.settings.postRollSec}s`)
     this.pending = {
       triggerWallMs,
       source,
@@ -321,7 +321,10 @@ export class CaptureController {
           this.emitCameras()
         }
         break
-      case 'clip':
+      case 'clip': {
+        const elapsed = this.pending ? performance.now() - this.pending.triggerWallMs : 0
+        const sizeMb = (message.mp4.byteLength / 1_048_576).toFixed(2)
+        console.log(`[CAPTURE] clip received camera=${message.cameraId.slice(0, 8)} size=${sizeMb}MB elapsed=${(elapsed / 1000).toFixed(1)}s remaining=${this.pending?.expected.size ?? 0}`)
         if (this.pending?.expected.has(message.cameraId)) {
           this.pending.collected.push({
             cameraId: message.cameraId,
@@ -332,7 +335,9 @@ export class CaptureController {
           if (this.pending.expected.size === 0) void this.finishCapture()
         }
         break
+      }
       case 'error':
+        console.warn(`[CAPTURE] worker error camera=${message.cameraId.slice(0, 8)} fatal=${message.fatal} msg=${message.message}`)
         if (camera && message.fatal) {
           camera.state = 'error'
           camera.error = message.message
@@ -343,12 +348,26 @@ export class CaptureController {
           if (this.pending.expected.size === 0) void this.finishCapture()
         }
         break
+      case 'stream-ended':
+        if (camera?.stream && camera.state === 'live') {
+          console.warn(`[CAPTURE] stream ended for camera=${message.cameraId.slice(0, 8)}, re-attaching`)
+          this.attachStream(camera, camera.stream)
+        }
+        break
+      case 'stream-stalled':
+        if (camera?.stream && camera.state === 'live') {
+          console.warn(`[CAPTURE] stream stalled for camera=${message.cameraId.slice(0, 8)} (${(message.stallMs / 1000).toFixed(1)}s), re-cloning track`)
+          this.attachStream(camera, camera.stream)
+        }
+        break
     }
   }
 
   private async finishCapture(): Promise<void> {
     const pending = this.pending
     if (!pending) return
+    const totalElapsed = performance.now() - pending.triggerWallMs
+    console.log(`[CAPTURE] all clips collected (${pending.collected.length}) in ${(totalElapsed / 1000).toFixed(1)}s — saving to disk`)
     this.pending = null
     clearTimeout(pending.timeout)
     this.listeners.captureStateChanged?.(false)
@@ -359,6 +378,7 @@ export class CaptureController {
       ? this.primaryCameraId
       : pending.collected[0].cameraId
 
+    const saveStart = performance.now()
     const meta = await window.api.invoke('clip:save', {
       cameras: pending.collected.map((clip) => ({
         cameraId: clip.cameraId,
@@ -374,6 +394,7 @@ export class CaptureController {
       postRollMs: this.settings.postRollSec * 1000,
       fps: this.settings.fps
     })
+    console.log(`[CAPTURE] saved to disk in ${(performance.now() - saveStart).toFixed(0)}ms — clip ready`)
 
     const primaryMp4 = pending.collected.find((clip) => clip.cameraId === primaryId)!.mp4
     this.listeners.clipSaved?.(meta, primaryMp4)

@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, renameSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ClipMeta, SaveClipRequest } from '@shared/types'
 import { golfDir } from './paths'
@@ -29,7 +29,7 @@ export class ClipWriter {
   }
 
   private ensureSession(): string {
-    if (!this.sessionId) {
+    if (!this.sessionId || !existsSync(join(golfDir(), this.sessionId))) {
       this.sessionId = sessionFolderName(new Date())
       mkdirSync(join(golfDir(), this.sessionId), { recursive: true })
       this.log(`Started session ${this.sessionId}`)

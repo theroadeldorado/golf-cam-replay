@@ -120,6 +120,7 @@ export class AudioTrigger {
       case 'listening':
         if (this.spikeDetected) {
           if (level < threshold * 0.4) {
+            console.log(`[AUDIO] FIRED level=${level.toFixed(4)} threshold=${threshold.toFixed(4)} spike→settle=${(nowMs - this.spikeAtMs).toFixed(0)}ms`)
             this.state = 'cooldown'
             this.cooldownUntilMs = nowMs + this.config.cooldownMs
             event.fired = true
@@ -127,9 +128,11 @@ export class AudioTrigger {
             this.onFire?.(this.spikeAtMs)
             this.spikeDetected = false
           } else if (nowMs - this.spikeAtMs > BURST_MAX_MS) {
+            console.log(`[AUDIO] spike rejected — sustained noise for ${BURST_MAX_MS}ms (level=${level.toFixed(4)})`)
             this.spikeDetected = false
           }
         } else if (level >= threshold) {
+          console.log(`[AUDIO] spike detected level=${level.toFixed(4)} threshold=${threshold.toFixed(4)}`)
           this.spikeAtMs = nowMs
           this.spikeDetected = true
         }

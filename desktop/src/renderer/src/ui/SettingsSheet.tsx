@@ -37,6 +37,7 @@ function MicPreview({
     setError(null)
 
     let stream: MediaStream
+    let ownsStream = true
     try {
       if (micDeviceId) {
         const phoneCamera = cameras.find(
@@ -46,6 +47,7 @@ function MicPreview({
           const audioTrack = phoneCamera.stream.getAudioTracks()[0]
           if (audioTrack) {
             stream = new MediaStream([audioTrack])
+            ownsStream = false
           } else {
             setError('Phone has no audio — reconnect with mic permission')
             return
@@ -59,7 +61,7 @@ function MicPreview({
       } else {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
       }
-    } catch (err) {
+    } catch {
       setError('No mic available')
       return
     }
@@ -71,6 +73,7 @@ function MicPreview({
     source.connect(analyser)
     const buf = new Float32Array(analyser.fftSize)
     let raf = 0
+    let closed = false
 
     const poll = (): void => {
       analyser.getFloatTimeDomainData(buf)
@@ -81,15 +84,13 @@ function MicPreview({
     }
     raf = requestAnimationFrame(poll)
 
-    const isPhoneStream = !!cameras.find(
-      (c) => c.id === micDeviceId && c.kind === 'phone'
-    )
-
     cleanupRef.current = () => {
+      if (closed) return
+      closed = true
       cancelAnimationFrame(raf)
       source.disconnect()
-      void ctx.close()
-      if (!isPhoneStream) stream.getTracks().forEach((t) => t.stop())
+      ctx.close().catch(() => {})
+      if (ownsStream) stream.getTracks().forEach((t) => t.stop())
     }
   }, [micDeviceId, cameras])
 

@@ -26,11 +26,11 @@ describe('SettingsStore', () => {
 
   it('persists a patch and round-trips through a new instance', () => {
     const store = new SettingsStore(filePath)
-    store.set({ preRollSec: 3.5, sensitivity: 3 })
+    store.set({ preRollSec: 3.5, audioThreshold: 0.15 })
 
     const reloaded = new SettingsStore(filePath)
     expect(reloaded.get().preRollSec).toBe(3.5)
-    expect(reloaded.get().sensitivity).toBe(3)
+    expect(reloaded.get().audioThreshold).toBe(0.15)
     expect(reloaded.get().postRollSec).toBe(DEFAULT_SETTINGS.postRollSec)
   })
 

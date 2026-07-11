@@ -75,15 +75,21 @@ export class PhoneCameraSource {
     peer.onicecandidate = (event) => {
       void this.signaling.send('candidate', event.candidate ? event.candidate.toJSON() : null)
     }
+    let streamEmitted = false
     peer.ontrack = (event) => {
-      const stream = event.streams[0] ?? new MediaStream([event.track])
-      const track = stream.getVideoTracks()[0]
-      console.log('[PHONE] ontrack:', track?.kind, 'readyState:', track?.readyState, 'muted:', track?.muted)
-      if (track) {
-        track.onunmute = () => console.log('[PHONE] track unmuted')
-        track.onended = () => console.log('[PHONE] track ended')
+      const track = event.track
+      console.log('[PHONE] ontrack:', track.kind, 'readyState:', track.readyState, 'muted:', track.muted)
+      if (track.kind === 'video') {
+        track.onunmute = () => console.log('[PHONE] video track unmuted')
+        track.onended = () => console.log('[PHONE] video track ended')
+      } else {
+        console.log('[PHONE] audio track received')
       }
-      this.callbacks.onStream(stream)
+      if (!streamEmitted) {
+        streamEmitted = true
+        const stream = event.streams[0] ?? new MediaStream([track])
+        this.callbacks.onStream(stream)
+      }
     }
     peer.oniceconnectionstatechange = () => {
       console.log('[PHONE] ICE connection:', peer.iceConnectionState)

@@ -11,6 +11,8 @@ export interface WorkerInit {
   fps: number
   bitrate: number
   retentionMs: number
+  /** Renderer's performance.now() at init time — used to sync clocks. */
+  rendererNowMs: number
 }
 
 export interface WorkerTrigger {
@@ -53,4 +55,15 @@ export interface WorkerError {
   fatal: boolean
 }
 
-export type FromWorkerMessage = WorkerClip | WorkerStatus | WorkerError
+export interface WorkerStreamEnded {
+  type: 'stream-ended'
+  cameraId: string
+}
+
+export interface WorkerStreamStalled {
+  type: 'stream-stalled'
+  cameraId: string
+  stallMs: number
+}
+
+export type FromWorkerMessage = WorkerClip | WorkerStatus | WorkerError | WorkerStreamEnded | WorkerStreamStalled
