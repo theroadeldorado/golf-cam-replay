@@ -127,8 +127,10 @@ function CameraClient() {
 
     const offer = await peer.createOffer()
     await peer.setLocalDescription(offer)
-    await postSignal(sessionId, { type: 'offer', payload: { sdp: offer.sdp } })
+    const offerPayload = { type: 'offer' as const, payload: { sdp: offer.sdp } }
+    await postSignal(sessionId, offerPayload)
 
+    let gotAnswer = false
     lastSeqRef.current = 0
     pollTimerRef.current = setInterval(async () => {
       try {
@@ -141,11 +143,14 @@ function CameraClient() {
         for (const message of messages) {
           lastSeqRef.current = Math.max(lastSeqRef.current, message.seq)
           if (message.type === 'answer') {
+            gotAnswer = true
             setStatus('connecting')
             const { sdp } = message.payload as { sdp: string }
             await peer.setRemoteDescription({ type: 'answer', sdp })
           } else if (message.type === 'candidate' && message.payload) {
             await peer.addIceCandidate(message.payload as RTCIceCandidateInit)
+          } else if (message.type === 'ping' && !gotAnswer) {
+            await postSignal(sessionId, offerPayload)
           } else if (message.type === 'bye') {
             setStatus('failed')
             cleanupConnection()

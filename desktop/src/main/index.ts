@@ -1,4 +1,4 @@
-import { app, ipcMain, net, protocol } from 'electron'
+import { app, ipcMain, net, protocol, session } from 'electron'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -79,6 +79,12 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.whenReady().then(() => {
+    // Auto-grant camera/mic permissions so getUserMedia works without prompts.
+    session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+      const allowed = ['media', 'mediaKeySystem', 'display-capture']
+      callback(allowed.includes(permission))
+    })
+
     // Available to both the spike windows and the normal app.
     registerAssetReader()
 

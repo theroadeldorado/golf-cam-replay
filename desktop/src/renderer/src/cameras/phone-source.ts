@@ -35,15 +35,27 @@ export class PhoneCameraSource {
     return `${webBaseUrl}/camera?s=${this.sessionId}`
   }
 
+  private pendingCandidates: RTCIceCandidateInit[] = []
+
   start(): void {
+    void this.signaling.send('ping', null)
     this.signaling.start(async (message) => {
       if (message.type === 'offer') {
+        this.pendingCandidates = []
         await this.handleOffer((message.payload as { sdp: string }).sdp)
-      } else if (message.type === 'candidate' && message.payload && this.peer) {
-        try {
-          await this.peer.addIceCandidate(message.payload as RTCIceCandidateInit)
-        } catch {
-          // Stale candidate from a torn-down peer generation — ignore.
+        for (const candidate of this.pendingCandidates) {
+          try { await this.peer?.addIceCandidate(candidate) } catch { /* stale */ }
+        }
+        this.pendingCandidates = []
+      } else if (message.type === 'candidate' && message.payload) {
+        if (this.peer) {
+          try {
+            await this.peer.addIceCandidate(message.payload as RTCIceCandidateInit)
+          } catch {
+            // Stale candidate from a torn-down peer generation — ignore.
+          }
+        } else {
+          this.pendingCandidates.push(message.payload as RTCIceCandidateInit)
         }
       } else if (message.type === 'bye') {
         this.setState('waiting')
