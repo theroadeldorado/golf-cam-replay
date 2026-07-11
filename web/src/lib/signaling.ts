@@ -107,14 +107,55 @@ class UpstashStore implements SignalStore {
   }
 }
 
+class TcpRedisStore implements SignalStore {
+  private clientPromise: Promise<import('redis').RedisClientType> | null = null
+
+  constructor(private readonly url: string) {}
+
+  private async getClient(): Promise<import('redis').RedisClientType> {
+    if (!this.clientPromise) {
+      this.clientPromise = (async () => {
+        const { createClient } = await import('redis')
+        const client = createClient({ url: this.url }) as import('redis').RedisClientType
+        client.on('error', (err) => console.error('Redis client error:', err))
+        await client.connect()
+        return client
+      })()
+    }
+    return this.clientPromise
+  }
+
+  async append(key: string, message: SignalMessage): Promise<void> {
+    const client = await this.getClient()
+    await client.rPush(key, JSON.stringify(message))
+    await client.expire(key, SESSION_TTL_SECONDS)
+  }
+
+  async readFrom(key: string, since: number): Promise<StoredMessage[]> {
+    const client = await this.getClient()
+    const raw = await client.lRange(key, since, -1)
+    return raw.map((item, i) => ({
+      ...(JSON.parse(item) as SignalMessage),
+      seq: since + i + 1,
+    }))
+  }
+}
+
 // Module-scope singleton; survives across invocations on a warm instance.
 let store: SignalStore | null = null
 
 function getStore(): SignalStore {
   if (!store) {
-    const url = process.env.UPSTASH_REDIS_REST_URL
-    const token = process.env.UPSTASH_REDIS_REST_TOKEN
-    store = url && token ? new UpstashStore(url, token) : new MemoryStore()
+    const restUrl = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL
+    const restToken = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN
+    const redisUrl = process.env.REDIS_URL
+    if (restUrl && restToken) {
+      store = new UpstashStore(restUrl, restToken)
+    } else if (redisUrl) {
+      store = new TcpRedisStore(redisUrl)
+    } else {
+      store = new MemoryStore()
+    }
   }
   return store
 }

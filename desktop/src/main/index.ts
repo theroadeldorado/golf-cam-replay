@@ -85,6 +85,22 @@ if (!app.requestSingleInstanceLock()) {
       callback(allowed.includes(permission))
     })
 
+    // Rewrite the CSP to include the configured web base URL so signaling
+    // fetch calls aren't blocked when pointing at a non-production host.
+    const webBase = process.env['REPLAYSWING_WEB_BASE']
+    if (webBase) {
+      session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+        const csp = details.responseHeaders?.['content-security-policy']
+        if (csp) {
+          csp[0] = csp[0].replace(
+            /connect-src\s/,
+            `connect-src ${webBase} `
+          )
+        }
+        callback({ responseHeaders: details.responseHeaders })
+      })
+    }
+
     // Available to both the spike windows and the normal app.
     registerAssetReader()
 
