@@ -13,18 +13,28 @@ const VALID_ROLES: SignalRole[] = ['desktop', 'phone']
 const VALID_TYPES = new Set(['offer', 'answer', 'candidate', 'bye', 'ping'])
 const MAX_PAYLOAD_BYTES = 32 * 1024
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
 interface RouteParams {
   params: Promise<{ session: string; role: string }>
 }
 
 function validate(session: string, role: string): NextResponse | null {
   if (!SESSION_ID_PATTERN.test(session)) {
-    return NextResponse.json({ error: 'invalid session id' }, { status: 400 })
+    return NextResponse.json({ error: 'invalid session id' }, { status: 400, headers: CORS_HEADERS })
   }
   if (!VALID_ROLES.includes(role as SignalRole)) {
-    return NextResponse.json({ error: 'invalid role' }, { status: 400 })
+    return NextResponse.json({ error: 'invalid role' }, { status: 400, headers: CORS_HEADERS })
   }
   return null
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
 }
 
 /** The caller (`role`) posts a message for the other side. */
@@ -35,17 +45,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   const body = await request.text()
   if (body.length > MAX_PAYLOAD_BYTES) {
-    return NextResponse.json({ error: 'payload too large' }, { status: 413 })
+    return NextResponse.json({ error: 'payload too large' }, { status: 413, headers: CORS_HEADERS })
   }
 
   let message: SignalMessage
   try {
     message = JSON.parse(body)
   } catch {
-    return NextResponse.json({ error: 'invalid JSON' }, { status: 400 })
+    return NextResponse.json({ error: 'invalid JSON' }, { status: 400, headers: CORS_HEADERS })
   }
   if (!VALID_TYPES.has(message.type)) {
-    return NextResponse.json({ error: 'invalid message type' }, { status: 400 })
+    return NextResponse.json({ error: 'invalid message type' }, { status: 400, headers: CORS_HEADERS })
   }
 
   await sendSignal(session, role as SignalRole, {
@@ -53,7 +63,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     payload: message.payload,
     sentAt: Date.now(),
   })
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true }, { headers: CORS_HEADERS })
 }
 
 /** The caller (`role`) drains its inbox: GET ?since=<last seen seq>. */
@@ -64,5 +74,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
   const since = Math.max(0, Number(request.nextUrl.searchParams.get('since') ?? 0) || 0)
   const messages = await receiveSignals(session, role as SignalRole, since)
-  return NextResponse.json({ messages })
+  return NextResponse.json({ messages }, { headers: CORS_HEADERS })
 }
