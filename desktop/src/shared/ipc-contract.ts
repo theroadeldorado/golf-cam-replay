@@ -32,6 +32,8 @@ export interface InvokeChannels {
   'dataDir:get': { args: []; result: string }
   /** Open a native folder picker, save the chosen directory, return its path (null if cancelled). */
   'dataDir:choose': { args: []; result: string | null }
+  /** Quit and install the downloaded update. */
+  'update:install': { args: []; result: void }
   /** Spike/diagnostic mode only: persist a produced file to the temp dir, returns its path. */
   'spike:save-temp': { args: [fileName: string, data: ArrayBuffer]; result: string }
   /** Spike/diagnostic mode only: deliver the JSON result; main prints it and exits. */
@@ -49,6 +51,8 @@ export interface EventChannels {
   'pip:visibility': boolean
   /** Spike/diagnostic mode only: message relayed from the other spike window. */
   'spike:message': unknown
+  /** A new version has been downloaded and is ready to install on restart. */
+  'update:ready': { version: string }
 }
 
 export type InvokeChannel = keyof InvokeChannels

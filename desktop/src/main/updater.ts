@@ -1,12 +1,8 @@
 import { app } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import { broadcast } from './ipc'
 import { log } from './logging'
 
-/**
- * Auto-update from GitHub Releases (publish config in electron-builder.yml).
- * Checks on startup, downloads in the background, installs on quit —
- * replaces v1's manual "download the new exe" flow.
- */
 export function setupAutoUpdate(): void {
   if (!app.isPackaged) return
 
@@ -15,12 +11,17 @@ export function setupAutoUpdate(): void {
   autoUpdater.autoInstallOnAppQuit = true
 
   autoUpdater.on('update-available', (info) => log.info(`Update available: ${info.version}`))
-  autoUpdater.on('update-downloaded', (info) =>
-    log.info(`Update ${info.version} downloaded; installs on quit`)
-  )
+  autoUpdater.on('update-downloaded', (info) => {
+    log.info(`Update ${info.version} downloaded; notifying renderer`)
+    broadcast('update:ready', { version: info.version })
+  })
   autoUpdater.on('error', (error) => log.warn(`Auto-update error: ${error.message}`))
 
   void autoUpdater.checkForUpdates().catch((error) => {
     log.warn(`Update check failed: ${error}`)
   })
+}
+
+export function installUpdate(): void {
+  autoUpdater.quitAndInstall()
 }

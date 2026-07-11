@@ -9,6 +9,7 @@ import { ClipWriter } from './clip-writer'
 import { ShareServer } from './share-server'
 import { golfDir } from './paths'
 import { loadAppPrefs, saveAppPrefs } from './app-prefs'
+import { installUpdate } from './updater'
 import { log } from './logging'
 
 function handle<C extends InvokeChannel>(
@@ -95,6 +96,7 @@ export function registerIpc(store: SettingsStore, windows: WindowRegistry): void
     return chosen
   })
 
+  handle('update:install', () => installUpdate())
   handle('pip:toggle', () => windows.togglePip())
   handle('pip:signal', (senderId, payload) => {
     windows.relayPipSignal(senderId, payload)
