@@ -37,6 +37,7 @@ export interface VisionSampleEvent {
   energy: number
   baseline: number
   spikeThreshold: number
+  stillLimit: number
   fired?: boolean
   /** Wall-clock of the first spike sample (impact estimate), set when fired. */
   firedAtMs?: number
@@ -115,6 +116,7 @@ export class VisionTrigger {
       energy,
       baseline: this.baseline,
       spikeThreshold,
+      stillLimit,
       present: personPresent
     }
 

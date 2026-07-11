@@ -38,7 +38,6 @@ export class PhoneCameraSource {
   private pendingCandidates: RTCIceCandidateInit[] = []
 
   start(): void {
-    void this.signaling.send('ping', null)
     this.signaling.start(async (message) => {
       if (message.type === 'offer') {
         this.pendingCandidates = []
@@ -78,9 +77,19 @@ export class PhoneCameraSource {
     }
     peer.ontrack = (event) => {
       const stream = event.streams[0] ?? new MediaStream([event.track])
+      const track = stream.getVideoTracks()[0]
+      console.log('[PHONE] ontrack:', track?.kind, 'readyState:', track?.readyState, 'muted:', track?.muted)
+      if (track) {
+        track.onunmute = () => console.log('[PHONE] track unmuted')
+        track.onended = () => console.log('[PHONE] track ended')
+      }
       this.callbacks.onStream(stream)
     }
+    peer.oniceconnectionstatechange = () => {
+      console.log('[PHONE] ICE connection:', peer.iceConnectionState)
+    }
     peer.onconnectionstatechange = () => {
+      console.log('[PHONE] connection:', peer.connectionState)
       if (peer.connectionState === 'connected') this.setState('connected')
       else if (['disconnected', 'failed'].includes(peer.connectionState)) {
         this.setState('reconnecting')

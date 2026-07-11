@@ -628,7 +628,7 @@ export function App(): React.JSX.Element {
               data-testid="vision-state"
               style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--muted)' }}
             >
-              {vision.state}
+              {vision.state} · e:{vision.energy.toFixed(1)} still:{vision.stillLimit.toFixed(1)} base:{vision.baseline.toFixed(1)} {vision.present ? '👤' : '—'}
             </span>
           </>
         )}
