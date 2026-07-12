@@ -39,8 +39,7 @@ export default defineConfig({
           index: resolve(__dirname, 'src/renderer/index.html'),
           pip: resolve(__dirname, 'src/renderer/pip.html'),
           'spike-encode': resolve(__dirname, 'src/renderer/spike-encode.html'),
-          'spike-pip': resolve(__dirname, 'src/renderer/spike-pip.html'),
-          'spike-presence': resolve(__dirname, 'src/renderer/spike-presence.html')
+          'spike-pip': resolve(__dirname, 'src/renderer/spike-pip.html')
         }
       }
     }
