@@ -6,6 +6,7 @@ export interface CameraConfig {
   label: string
   zoom?: number
   rotation?: number
+  mirror?: boolean
 }
 
 export interface WindowBounds {

@@ -195,8 +195,10 @@ function CameraTile({
   phoneQr,
   zoom,
   rotation,
+  mirror,
   onZoom,
   onRotate,
+  onMirror,
   landmarks,
   onVideoRef
 }: {
@@ -210,8 +212,10 @@ function CameraTile({
   phoneQr?: { qrDataUrl: string; url: string }
   zoom: number
   rotation: number
+  mirror: boolean
   onZoom: (delta: number) => void
   onRotate: () => void
+  onMirror: () => void
   landmarks?: NormalizedLandmark[] | null
   onVideoRef?: (el: HTMLVideoElement | null) => void
 }): React.JSX.Element {
@@ -225,8 +229,9 @@ function CameraTile({
   }, [camera.stream, onVideoRef])
 
   const isPhoneWaiting = camera.kind === 'phone' && camera.state === 'connecting' && phoneQr
-  const transform = zoom !== 1 || rotation !== 0
-    ? `scale(${zoom}) rotate(${rotation}deg)`
+  const hasTransform = zoom !== 1 || rotation !== 0 || mirror
+  const transform = hasTransform
+    ? `${mirror ? 'scaleX(-1) ' : ''}scale(${zoom}) rotate(${rotation}deg)`
     : undefined
 
   return (
@@ -261,7 +266,7 @@ function CameraTile({
             onSelect={onSelect}
             onChange={onShapesChange}
           />
-          {landmarks && <SkeletonOverlay landmarks={landmarks} videoRef={videoRef} />}
+          {landmarks && <SkeletonOverlay landmarks={landmarks} videoRef={videoRef} mirror={mirror} />}
         </>
       )}
       <span className="tag">
@@ -273,6 +278,7 @@ function CameraTile({
         <span>{Math.round(zoom * 100)}%</span>
         <button title="Zoom in" onClick={() => onZoom(0.25)}>+</button>
         <button title="Rotate 90°" onClick={onRotate}>↻</button>
+        <button title="Mirror" onClick={onMirror} className={mirror ? 'on' : ''}>⇔</button>
       </div>
       <button className="remove" title="Remove camera" onClick={onRemove}>
         ✕
@@ -802,6 +808,7 @@ export function App(): React.JSX.Element {
                     phoneQr={phoneQrUrlsRef.current.get(camera.id)}
                     zoom={config?.zoom ?? 1}
                     rotation={config?.rotation ?? 0}
+                    mirror={config?.mirror ?? false}
                     onZoom={(delta) => {
                       const current = config?.zoom ?? 1
                       updateCameraConfig(camera.id, { zoom: Math.max(0.5, Math.min(4, current + delta)) })
@@ -809,6 +816,9 @@ export function App(): React.JSX.Element {
                     onRotate={() => {
                       const current = config?.rotation ?? 0
                       updateCameraConfig(camera.id, { rotation: (current + 90) % 360 })
+                    }}
+                    onMirror={() => {
+                      updateCameraConfig(camera.id, { mirror: !(config?.mirror ?? false) })
                     }}
                     landmarks={isPrimary && settings?.autoArm && settings?.showSkeleton ? poseLandmarks : undefined}
                     onVideoRef={isPrimary ? (el) => {

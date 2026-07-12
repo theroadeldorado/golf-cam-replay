@@ -38,10 +38,12 @@ function getVideoContentRect(video: HTMLVideoElement): { x: number; y: number; w
 
 export function SkeletonOverlay({
   landmarks,
-  videoRef
+  videoRef,
+  mirror = false
 }: {
   landmarks: NormalizedLandmark[] | null
   videoRef: React.RefObject<HTMLVideoElement | null>
+  mirror?: boolean
 }): React.JSX.Element | null {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -61,6 +63,9 @@ export function SkeletonOverlay({
     if (!landmarks || landmarks.length === 0) return
 
     const { x: ox, y: oy, w, h } = getVideoContentRect(video)
+    const px = (lm: NormalizedLandmark): number =>
+      mirror ? ox + w - lm.x * w : ox + lm.x * w
+    const py = (lm: NormalizedLandmark): number => oy + lm.y * h
 
     ctx.strokeStyle = 'rgba(67, 176, 108, 0.7)'
     ctx.lineWidth = 2
@@ -70,19 +75,19 @@ export function SkeletonOverlay({
       if (!la || !lb) continue
       if ((la.visibility ?? 0) < 0.3 || (lb.visibility ?? 0) < 0.3) continue
       ctx.beginPath()
-      ctx.moveTo(ox + la.x * w, oy + la.y * h)
-      ctx.lineTo(ox + lb.x * w, oy + lb.y * h)
+      ctx.moveTo(px(la), py(la))
+      ctx.lineTo(px(lb), py(lb))
       ctx.stroke()
     }
 
     for (const lm of landmarks) {
       if ((lm.visibility ?? 0) < 0.3) continue
       ctx.beginPath()
-      ctx.arc(ox + lm.x * w, oy + lm.y * h, 4, 0, 2 * Math.PI)
+      ctx.arc(px(lm), py(lm), 4, 0, 2 * Math.PI)
       ctx.fillStyle = (lm.visibility ?? 0) >= 0.5 ? '#43b06c' : '#d9a13c'
       ctx.fill()
     }
-  }, [landmarks, videoRef])
+  }, [landmarks, videoRef, mirror])
 
   return (
     <canvas
