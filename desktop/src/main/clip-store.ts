@@ -6,6 +6,11 @@ import { golfDir } from './paths'
 /** Session folders are named with the v1 timestamp convention, e.g. 2026-07-08_14-30-00. */
 const SESSION_FOLDER_PATTERN = /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/
 
+function validatePathSegment(s: string): void {
+  if (s.includes('/') || s.includes('\\') || s.includes('..') || s === '.' || s === '')
+    throw new Error('invalid path segment')
+}
+
 /**
  * Read side of session/clip storage. Shares the v1 on-disk format:
  * ~/GolfSwings/{timestamp}/ containing clips.json, MP4s, and JPG thumbnails.
@@ -36,15 +41,14 @@ export function listSessions(): SessionInfo[] {
 
 /** Read a clip's MP4 bytes for blob playback in the renderer. */
 export function readClipFile(sessionId: string, fileName: string): ArrayBuffer {
-  // Guard against path traversal — both parts must be single path segments.
-  if ([sessionId, fileName].some((part) => part.includes('/') || part.includes('..'))) {
-    throw new Error('invalid clip path')
-  }
+  validatePathSegment(sessionId)
+  validatePathSegment(fileName)
   const buffer = readFileSync(join(golfDir(), sessionId, fileName))
   return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
 }
 
 export function readClips(sessionId: string): ClipMeta[] {
+  validatePathSegment(sessionId)
   const clipsFile = join(golfDir(), sessionId, 'clips.json')
   if (!existsSync(clipsFile)) return []
   try {
@@ -56,6 +60,7 @@ export function readClips(sessionId: string): ClipMeta[] {
 }
 
 function writeClips(sessionId: string, clips: ClipMeta[]): void {
+  validatePathSegment(sessionId)
   const clipsFile = join(golfDir(), sessionId, 'clips.json')
   const tempFile = `${clipsFile}.tmp`
   writeFileSync(tempFile, JSON.stringify(clips, null, 2), 'utf-8')

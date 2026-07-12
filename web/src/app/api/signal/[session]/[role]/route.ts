@@ -19,6 +19,40 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 }
 
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now()
+  if (rateLimitMap.size > 2000) {
+    for (const [key, val] of rateLimitMap) {
+      if (val.resetAt < now) rateLimitMap.delete(key)
+    }
+  }
+  const entry = rateLimitMap.get(ip)
+  if (!entry || entry.resetAt < now) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + 60_000 })
+    return false
+  }
+  if (entry.count >= 300) return true
+  entry.count++
+  return false
+}
+
+function validatePayload(type: string, payload: unknown): boolean {
+  switch (type) {
+    case 'offer':
+    case 'answer':
+      return typeof payload === 'object' && payload !== null && typeof (payload as Record<string, unknown>).sdp === 'string'
+    case 'candidate':
+      return payload === null || (typeof payload === 'object' && payload !== null)
+    case 'bye':
+    case 'ping':
+      return true
+    default:
+      return false
+  }
+}
+
 interface RouteParams {
   params: Promise<{ session: string; role: string }>
 }
@@ -39,6 +73,13 @@ export async function OPTIONS() {
 
 /** The caller (`role`) posts a message for the other side. */
 export async function POST(request: NextRequest, { params }: RouteParams) {
+  const ip = request.headers.get('x-real-ip')
+    ?? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    ?? 'unknown'
+  if (isRateLimited(ip)) {
+    return NextResponse.json({ error: 'rate limited' }, { status: 429, headers: CORS_HEADERS })
+  }
+
   const { session, role } = await params
   const invalid = validate(session, role)
   if (invalid) return invalid
@@ -56,6 +97,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
   if (!VALID_TYPES.has(message.type)) {
     return NextResponse.json({ error: 'invalid message type' }, { status: 400, headers: CORS_HEADERS })
+  }
+  if (!validatePayload(message.type, message.payload)) {
+    return NextResponse.json({ error: 'invalid payload' }, { status: 400, headers: CORS_HEADERS })
   }
 
   await sendSignal(session, role as SignalRole, {

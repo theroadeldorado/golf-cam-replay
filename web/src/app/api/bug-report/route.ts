@@ -27,7 +27,9 @@ function isRateLimited(ip: string): boolean {
 
 export async function POST(request: NextRequest) {
   try {
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+    const ip = request.headers.get('x-real-ip')
+      ?? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      ?? 'unknown';
 
     if (isRateLimited(ip)) {
       return NextResponse.json(
@@ -36,7 +38,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
+    const raw = await request.text();
+    if (raw.length > 64 * 1024) {
+      return NextResponse.json({ error: 'Payload too large.' }, { status: 413 });
+    }
+    const body = JSON.parse(raw);
     const {
       title,
       description,
@@ -62,6 +68,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Description is required.' }, { status: 400 });
     }
 
+    const isDesktopFeedback = source === 'desktop-app'
     const normalizedTitle =
       typeof title === 'string' && title.trim().length > 0
         ? title.trim()
@@ -92,7 +99,7 @@ export async function POST(request: NextRequest) {
       steps?.trim() ? `## Steps to Reproduce\n${steps.trim()}` : null,
       expected?.trim() ? `## Expected Behavior\n${expected.trim()}` : null,
       logs?.trim() ? `## Logs\n\`\`\`\n${logs.trim().slice(0, 12000)}\n\`\`\`` : null,
-      `---\n*Submitted via [replayswing.com](https://replayswing.com)*`,
+      `---\n*Submitted via ${isDesktopFeedback ? 'ReplaySwing desktop app' : '[replayswing.com](https://replayswing.com)'}*`,
     ]
       .filter(Boolean)
       .join('\n\n');
@@ -107,9 +114,9 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          title: `[Bug] ${normalizedTitle}`,
+          title: `[${isDesktopFeedback ? 'Feedback' : 'Bug'}] ${normalizedTitle}`,
           body: sections,
-          labels: ['bug', 'user-reported'],
+          labels: isDesktopFeedback ? ['feedback', 'desktop'] : ['bug', 'user-reported'],
         }),
       }
     );

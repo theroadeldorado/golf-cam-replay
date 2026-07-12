@@ -34,8 +34,8 @@ export interface InvokeChannels {
   'dataDir:choose': { args: []; result: string | null }
   /** Quit and install the downloaded update. */
   'update:install': { args: []; result: void }
-  /** Open browser to a pre-filled GitHub issue for feedback/bug reports. */
-  'feedback:submit': { args: [title: string, body: string]; result: void }
+  /** Submit feedback as a GitHub issue via the web API. */
+  'feedback:submit': { args: [title: string, body: string]; result: { success: boolean; error?: string } }
   /** Spike/diagnostic mode only: persist a produced file to the temp dir, returns its path. */
   'spike:save-temp': { args: [fileName: string, data: ArrayBuffer]; result: string }
   /** Spike/diagnostic mode only: deliver the JSON result; main prints it and exits. */

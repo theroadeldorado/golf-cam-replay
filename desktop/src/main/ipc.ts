@@ -1,4 +1,4 @@
-import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron'
+import { app, ipcMain, BrowserWindow, dialog, net } from 'electron'
 import { copyFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { EventChannel, EventChannels, InvokeChannel, InvokeChannels } from '@shared/ipc-contract'
@@ -46,6 +46,8 @@ export function registerIpc(store: SettingsStore, windows: WindowRegistry): void
   handle('clip:read', (_sender, sessionId, fileName) => readClipFile(sessionId, fileName))
 
   handle('clip:saveAs', async (senderId, sessionId, fileName) => {
+    if ([sessionId, fileName].some((p) => p.includes('/') || p.includes('\\') || p.includes('..') || p === '.' || p === ''))
+      throw new Error('invalid clip path')
     const source = join(golfDir(), sessionId, fileName)
     // Test seam: skip the native dialog when a destination is pre-set.
     const forced = process.env['REPLAYSWING_SAVEAS_DEST']
@@ -96,13 +98,29 @@ export function registerIpc(store: SettingsStore, windows: WindowRegistry): void
     return chosen
   })
 
-  handle('feedback:submit', (_sender, title, body) => {
-    const sysInfo = `\n\n---\n**App:** v${__APP_VERSION__}  \n**OS:** ${process.platform} ${process.arch} ${process.getSystemVersion()}  \n**Electron:** ${process.versions.electron}`
-    const url = new URL('https://github.com/theroadeldorado/replay-swing/issues/new')
-    url.searchParams.set('title', title)
-    url.searchParams.set('body', body + sysInfo)
-    url.searchParams.set('labels', 'feedback')
-    void shell.openExternal(url.toString())
+  handle('feedback:submit', async (_sender, title, body) => {
+    const webBase = process.env['REPLAYSWING_WEB_BASE'] ?? 'https://www.replayswing.com'
+    try {
+      const res = await net.fetch(`${webBase}/api/bug-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          description: body,
+          appVersion: __APP_VERSION__,
+          platform: `${process.platform} ${process.arch} ${process.getSystemVersion()}`,
+          source: 'desktop-app'
+        })
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null) as { error?: string } | null
+        return { success: false, error: data?.error ?? `Server error (${res.status})` }
+      }
+      return { success: true }
+    } catch (err) {
+      log.error('Feedback submit failed:', err)
+      return { success: false, error: 'Could not reach the server. Check your internet connection.' }
+    }
   })
 
   handle('update:install', () => installUpdate())

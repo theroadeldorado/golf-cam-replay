@@ -44,7 +44,7 @@ function registerClipProtocol(): void {
   protocol.handle('clip', (request) => {
     const url = new URL(request.url)
     const relativePath = decodeURIComponent(url.pathname).replace(/^\//, '')
-    if (url.host !== 'media' || relativePath.split('/').some((part) => part === '..' || part === '')) {
+    if (url.host !== 'media' || relativePath.split('/').some((part) => part === '..' || part === '' || part.includes('\\'))) {
       return new Response('bad request', { status: 400 })
     }
     return net.fetch(pathToFileURL(join(golfDir(), relativePath)).toString())
@@ -57,7 +57,7 @@ function registerClipProtocol(): void {
 function registerAssetReader(): void {
   const rendererDir = join(__dirname, '../renderer')
   ipcMain.handle('asset:read', (_event, name: string): ArrayBuffer => {
-    if (name.split('/').some((part) => part === '..' || part === '')) {
+    if (name.split('/').some((part) => part === '..' || part === '' || part.includes('\\'))) {
       throw new Error('invalid asset path')
     }
     const buf = readFileSync(join(rendererDir, name))

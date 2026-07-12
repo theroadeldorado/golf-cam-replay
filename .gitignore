@@ -12,6 +12,15 @@ desktop/undefined/
 .vscode/
 .idea/
 
-# Environment
+# Python
+__pycache__/
+*.pyc
+
+# Environment / credentials
 .env
 .env.local
+.env*.local
+*.pem
+*.key
+*.p12
+*.pfx
