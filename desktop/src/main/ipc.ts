@@ -1,4 +1,4 @@
-import { app, ipcMain, BrowserWindow, dialog } from 'electron'
+import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron'
 import { copyFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { EventChannel, EventChannels, InvokeChannel, InvokeChannels } from '@shared/ipc-contract'
@@ -94,6 +94,15 @@ export function registerIpc(store: SettingsStore, windows: WindowRegistry): void
     saveAppPrefs({ ...loadAppPrefs(), dataDir: chosen })
     log.info(`Data directory changed to ${chosen}`)
     return chosen
+  })
+
+  handle('feedback:submit', (_sender, title, body) => {
+    const sysInfo = `\n\n---\n**App:** v${__APP_VERSION__}  \n**OS:** ${process.platform} ${process.arch} ${process.getSystemVersion()}  \n**Electron:** ${process.versions.electron}`
+    const url = new URL('https://github.com/theroadeldorado/replay-swing/issues/new')
+    url.searchParams.set('title', title)
+    url.searchParams.set('body', body + sysInfo)
+    url.searchParams.set('labels', 'feedback')
+    void shell.openExternal(url.toString())
   })
 
   handle('update:install', () => installUpdate())

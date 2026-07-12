@@ -5,12 +5,16 @@ import { listUsbCameras, onDeviceChange, type UsbCameraInfo } from '../cameras/u
 import { PhoneCameraSource } from '../cameras/phone-source'
 import type { AudioSampleEvent } from '../trigger/audio-trigger'
 import type { SwingTriggerEvent } from '../trigger/swing-trigger'
+import type { PresenceStatus, BodyVisibility } from '../trigger/presence-gate'
+import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
+import { SkeletonOverlay } from '../ui/SkeletonOverlay'
 import { ProgramBus } from '../playback/program-bus'
 import { PairingDialog, type PairingInfo } from '../ui/PairingDialog'
 import { ShareDialog, type ShareInfo } from '../ui/ShareDialog'
 import { ComparisonModal, type CompareOption } from '../compare/ComparisonModal'
 import { Rail } from '../ui/Rail'
 import { SettingsSheet } from '../ui/SettingsSheet'
+import { FeedbackDialog } from '../ui/FeedbackDialog'
 import { DrawingOverlay, type DrawTool } from '../drawing/DrawingOverlay'
 import { DrawToolbar } from '../drawing/DrawToolbar'
 import { SHAPE_COLORS, type Shape } from '../drawing/shapes'
@@ -192,7 +196,9 @@ function CameraTile({
   zoom,
   rotation,
   onZoom,
-  onRotate
+  onRotate,
+  landmarks,
+  onVideoRef
 }: {
   camera: ActiveCamera
   onRemove: () => void
@@ -206,11 +212,17 @@ function CameraTile({
   rotation: number
   onZoom: (delta: number) => void
   onRotate: () => void
+  landmarks?: NormalizedLandmark[] | null
+  onVideoRef?: (el: HTMLVideoElement | null) => void
 }): React.JSX.Element {
   const videoRef = useRef<HTMLVideoElement>(null)
   useEffect(() => {
     if (videoRef.current && camera.stream) videoRef.current.srcObject = camera.stream
   }, [camera.stream])
+
+  useEffect(() => {
+    onVideoRef?.(videoRef.current)
+  }, [camera.stream, onVideoRef])
 
   const isPhoneWaiting = camera.kind === 'phone' && camera.state === 'connecting' && phoneQr
   const transform = zoom !== 1 || rotation !== 0
@@ -249,6 +261,7 @@ function CameraTile({
             onSelect={onSelect}
             onChange={onShapesChange}
           />
+          {landmarks && <SkeletonOverlay landmarks={landmarks} videoRef={videoRef} />}
         </>
       )}
       <span className="tag">
@@ -274,6 +287,7 @@ export function App(): React.JSX.Element {
   const [available, setAvailable] = useState<UsbCameraInfo[]>([])
   const [showPicker, setShowPicker] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showFeedback, setShowFeedback] = useState(false)
   const [capturing, setCapturing] = useState(false)
   const [armed, setArmed] = useState(false)
   const [audio, setAudio] = useState<AudioSampleEvent | null>(null)
@@ -290,6 +304,9 @@ export function App(): React.JSX.Element {
   // Comparison lives in a self-contained modal with a dropdown per pane.
   const [compareOptions, setCompareOptions] = useState<CompareOption[] | null>(null)
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
+  const [presence, setPresence] = useState<PresenceStatus | null>(null)
+  const [bodyVisibility, setBodyVisibility] = useState<BodyVisibility>('none')
+  const [poseLandmarks, setPoseLandmarks] = useState<NormalizedLandmark[] | null>(null)
   const controllerRef = useRef<CaptureController | null>(null)
   const busRef = useRef<ProgramBus | null>(null)
   const phoneSourcesRef = useRef(new Map<string, PhoneCameraSource>())
@@ -328,6 +345,15 @@ export function App(): React.JSX.Element {
       controller.on('captureStateChanged', setCapturing)
       controller.on('audioEvent', setAudio)
       controller.on('swingEvent', setSwing)
+      controller.on('presenceEvent', (event) => {
+        setPresence(event.status)
+        setBodyVisibility(event.bodyVisibility)
+      })
+      controller.on('armedChanged', setArmed)
+      controller.on('poseLandmarks', (landmarks, bv) => {
+        setPoseLandmarks(landmarks)
+        setBodyVisibility(bv)
+      })
       controller.on('clipSaved', (meta, cameraMp4s) => {
         const replayCameras = cameraMp4s.map((c) => ({
           cameraId: c.cameraId,
@@ -380,6 +406,8 @@ export function App(): React.JSX.Element {
           })
         }
       }
+
+      if (loaded.autoArm) controller.setAutoArm(true)
 
       void refreshGallery()
     })()
@@ -547,6 +575,7 @@ export function App(): React.JSX.Element {
       setSettings(updated)
       const controller = controllerRef.current
       controller?.updateSettings(updated)
+      if ('autoArm' in patch) controller?.setAutoArm(updated.autoArm)
       const rearmKeys: (keyof Settings)[] = ['triggerMode', 'micDeviceId']
       if (rearmKeys.some((k) => k in patch) && controller?.isArmed) {
         controller.setArmed(false)
@@ -698,6 +727,9 @@ export function App(): React.JSX.Element {
         <button data-testid="compare-start" onClick={() => void openCompare()} title="Compare two swings">
           Compare
         </button>
+        <button onClick={() => setShowFeedback(true)} title="Submit feedback">
+          Feedback
+        </button>
         <button onClick={() => setShowSettings(true)} title="Settings">
           ⚙
         </button>
@@ -754,6 +786,7 @@ export function App(): React.JSX.Element {
             <div className="camera-grid" style={{ gridTemplateColumns: `repeat(${gridColumns}, 1fr)` }}>
               {cameras.map((camera) => {
                 const config = settings?.cameras.find((c) => c.id === camera.id)
+                const isPrimary = camera.id === (settings?.primaryCameraId ?? cameras[0]?.id)
                 return (
                   <CameraTile
                     key={camera.id}
@@ -777,6 +810,10 @@ export function App(): React.JSX.Element {
                       const current = config?.rotation ?? 0
                       updateCameraConfig(camera.id, { rotation: (current + 90) % 360 })
                     }}
+                    landmarks={isPrimary && settings?.autoArm && settings?.showSkeleton ? poseLandmarks : undefined}
+                    onVideoRef={isPrimary ? (el) => {
+                      if (el) controllerRef.current?.bindPresenceVideo(el)
+                    } : undefined}
                   />
                 )
               })}
@@ -861,6 +898,14 @@ export function App(): React.JSX.Element {
               : 'Cooldown'}
           </span>
         )}
+        {settings?.autoArm && presence && (
+          <span className={`presence-indicator presence-${presence}`} title={`Person: ${presence}`}>
+            {presence === 'present' || presence === 'leaving' ? '🧍' : presence === 'entering' ? '🧍' : presence === 'loading' ? '⏳' : presence === 'error' ? '⚠' : '👤'}
+          </span>
+        )}
+        {settings?.autoArm && bodyVisibility === 'partial' && presence !== 'present' && presence !== 'loading' && (
+          <span className="framing-hint">Adjust camera to show full body</span>
+        )}
         <button className="record-btn" onClick={recordNow} disabled={capturing || !anyLive}>
           {capturing ? 'Recording…' : 'Record now (T)'}
         </button>
@@ -928,6 +973,8 @@ export function App(): React.JSX.Element {
           onClose={() => setShowSettings(false)}
         />
       )}
+
+      {showFeedback && <FeedbackDialog onClose={() => setShowFeedback(false)} />}
     </>
   )
 }

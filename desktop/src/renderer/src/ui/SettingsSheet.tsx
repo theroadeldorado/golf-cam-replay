@@ -285,6 +285,35 @@ export function SettingsSheet({
           </p>
         </div>
 
+        <div className="field">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={settings.autoArm}
+              onChange={(event) => onChange({ autoArm: event.target.checked })}
+            />
+            Auto-arm when a person steps into view
+          </label>
+          <p className="hint" style={{ marginTop: 6 }}>
+            Uses pose detection on the primary camera. Arms when someone is in frame for
+            ~1.5 seconds, disarms ~5 seconds after they leave. Manual arm/disarm always
+            overrides.
+          </p>
+        </div>
+
+        {settings.autoArm && (
+          <div className="field">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={settings.showSkeleton}
+                onChange={(event) => onChange({ showSkeleton: event.target.checked })}
+              />
+              Show skeleton overlay (dev)
+            </label>
+          </div>
+        )}
+
         <button onClick={onClose} style={{ marginTop: 8 }}>
           Done
         </button>

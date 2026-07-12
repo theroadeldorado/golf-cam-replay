@@ -827,3 +827,56 @@ button:focus-visible {
   padding: 7px 10px;
   font-family: var(--font-body);
 }
+
+/* Presence indicator */
+.presence-indicator {
+  font-size: 16px;
+  opacity: 0.4;
+  transition: opacity 0.3s;
+}
+.presence-indicator.presence-present,
+.presence-indicator.presence-leaving {
+  opacity: 1;
+}
+.presence-indicator.presence-entering {
+  opacity: 0.7;
+  animation: pulse 1s ease-in-out infinite;
+}
+.presence-indicator.presence-error {
+  opacity: 0.8;
+  color: var(--fire);
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* Framing hint */
+.framing-hint {
+  font-size: 11px;
+  color: var(--watch);
+  font-family: var(--font-mono);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Feedback dialog */
+.feedback-dialog { max-width: 480px; }
+.feedback-dialog input[type="text"] {
+  width: 100%;
+  background: var(--panel-raised);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: var(--font-body);
+}
+
+/* Skeleton overlay */
+.skeleton-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}

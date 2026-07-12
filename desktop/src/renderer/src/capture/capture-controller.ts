@@ -9,6 +9,8 @@ import type { FromWorkerMessage, WorkerInit } from './worker-protocol'
 import { openUsbCamera } from '../cameras/usb'
 import { AudioTrigger, type AudioSampleEvent } from '../trigger/audio-trigger'
 import { SwingTrigger, type SwingTriggerEvent } from '../trigger/swing-trigger'
+import { PresenceGate, type PresenceEvent, type BodyVisibility } from '../trigger/presence-gate'
+import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
 
 const BITRATE = 7_000_000
 const CLIP_COLLECT_TIMEOUT_MS = 12_000
@@ -46,6 +48,9 @@ interface ControllerEvents {
   captureStateChanged: (capturing: boolean) => void
   audioEvent: (event: AudioSampleEvent) => void
   swingEvent: (event: SwingTriggerEvent) => void
+  presenceEvent: (event: PresenceEvent) => void
+  armedChanged: (armed: boolean) => void
+  poseLandmarks: (landmarks: NormalizedLandmark[] | null, bodyVisibility: BodyVisibility) => void
 }
 
 export class CaptureController {
@@ -62,16 +67,26 @@ export class CaptureController {
   private hybridAudioSource: MediaStreamAudioSourceNode | null = null
   private hybridAudioStream: MediaStream | null = null
   private hybridAudioTimer: ReturnType<typeof setInterval> | null = null
+  private presenceGate: PresenceGate | null = null
+  private autoArmEnabled = false
+  private manualOverride = false
+  private _armed = false
 
   constructor(private settings: Settings) {}
 
   /** Arm/disarm the auto trigger. Manual trigger works regardless. */
-  setArmed(armed: boolean): void {
+  setArmed(armed: boolean, source: 'manual' | 'auto' = 'manual'): void {
+    if (source === 'manual') {
+      this.manualOverride = armed !== this.presenceGate?.isPresent
+    }
+
     this.audioTrigger?.stop()
     this.audioTrigger = null
     this.stopHybridAudio()
     this.swingTrigger?.stop()
     this.swingTrigger = null
+    this._armed = armed
+    this.listeners.armedChanged?.(armed)
     if (!armed) return
 
     const cooldownMs = Math.max(
@@ -82,6 +97,67 @@ export class CaptureController {
       this.startAudioTrigger(cooldownMs)
     } else if (this.settings.triggerMode === 'hybrid') {
       this.startHybridTrigger(cooldownMs)
+    }
+  }
+
+  setAutoArm(enabled: boolean): void {
+    this.autoArmEnabled = enabled
+    if (enabled) {
+      void this.startPresenceDetection()
+    } else {
+      this.stopPresenceDetection()
+    }
+  }
+
+  private async startPresenceDetection(): Promise<void> {
+    if (this.presenceGate) return
+
+    const gate = new PresenceGate()
+    this.presenceGate = gate
+    gate.onStatusChange = (event) => {
+      this.listeners.presenceEvent?.(event)
+      this.handlePresenceChange(event)
+    }
+    gate.onDetection = (landmarks, bodyVisibility) => {
+      this.listeners.poseLandmarks?.(landmarks, bodyVisibility)
+    }
+
+    await gate.load()
+    if (gate.status === 'error') return
+
+    const primaryVideo = this.getPrimaryVideoElement()
+    if (primaryVideo) gate.start(primaryVideo)
+  }
+
+  private handlePresenceChange(event: PresenceEvent): void {
+    if (!this.autoArmEnabled) return
+
+    if (event.status === 'present') {
+      if (this.manualOverride) return
+      if (!this._armed) this.setArmed(true, 'auto')
+    } else if (event.status === 'absent') {
+      if (this.manualOverride) {
+        this.manualOverride = false
+        return
+      }
+      if (this.pending) return
+      if (this._armed) this.setArmed(false, 'auto')
+    }
+  }
+
+  private stopPresenceDetection(): void {
+    this.presenceGate?.dispose()
+    this.presenceGate = null
+  }
+
+  private getPrimaryVideoElement(): HTMLVideoElement | null {
+    return this.thumbnailVideo
+  }
+
+  bindPresenceVideo(video: HTMLVideoElement): void {
+    this.presenceGate?.rebind(video)
+    if (this.presenceGate && this.presenceGate.status !== 'error') {
+      this.presenceGate.start(video)
     }
   }
 
@@ -222,7 +298,7 @@ export class CaptureController {
   }
 
   get isArmed(): boolean {
-    return this.audioTrigger !== null || this.swingTrigger !== null
+    return this._armed
   }
 
   on<K extends keyof ControllerEvents>(event: K, listener: ControllerEvents[K]): void {
@@ -513,6 +589,7 @@ export class CaptureController {
     this.stopHybridAudio()
     this.swingTrigger?.stop()
     this.swingTrigger = null
+    this.stopPresenceDetection()
     for (const id of [...this.cameras.keys()]) this.removeCamera(id)
   }
 }

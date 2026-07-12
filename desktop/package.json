@@ -1,6 +1,6 @@
 {
   "name": "replayswing-desktop",
-  "version": "0.4.2-beta",
+  "version": "0.4.3-beta",
   "description": "ReplaySwing v2 — instant golf swing replay for your simulator",
   "main": "./out/main/index.js",
   "author": "TR2E",
@@ -40,6 +40,7 @@
   "dependencies": {
     "@fontsource-variable/archivo": "^5.2.8",
     "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@mediapipe/tasks-vision": "^0.10.35",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
     "mp4-muxer": "^5.2.2",

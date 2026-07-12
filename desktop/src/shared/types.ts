@@ -57,6 +57,10 @@ export interface Settings {
   mainWindowBounds: WindowBounds | null
   /** Per-camera drawing annotations, keyed by camera id. */
   drawings: Record<string, DrawnShape[]>
+  /** Auto-arm/disarm when a person is detected in the primary camera view. */
+  autoArm: boolean
+  /** Dev: show pose skeleton overlay on primary camera. */
+  showSkeleton: boolean
 }
 
 /** Extra metadata v2 records per clip. Lives under the `v2` key in clips.json

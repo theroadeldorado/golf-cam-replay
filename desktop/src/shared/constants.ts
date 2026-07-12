@@ -20,7 +20,9 @@ export const DEFAULT_SETTINGS: Settings = {
   micDeviceId: null,
   pip: { bounds: null, visible: false },
   mainWindowBounds: null,
-  drawings: {}
+  drawings: {},
+  autoArm: true,
+  showSkeleton: false
 }
 
 export const MAX_CAMERAS = 4
