@@ -820,7 +820,7 @@ export function App(): React.JSX.Element {
                     onMirror={() => {
                       updateCameraConfig(camera.id, { mirror: !(config?.mirror ?? false) })
                     }}
-                    landmarks={isPrimary && settings?.autoArm && settings?.showSkeleton ? poseLandmarks : undefined}
+                    landmarks={import.meta.env.DEV && isPrimary && settings?.autoArm && settings?.showSkeleton ? poseLandmarks : undefined}
                     onVideoRef={isPrimary ? (el) => {
                       if (el) controllerRef.current?.bindPresenceVideo(el)
                     } : undefined}

@@ -301,7 +301,7 @@ export function SettingsSheet({
           </p>
         </div>
 
-        {settings.autoArm && (
+        {import.meta.env.DEV && settings.autoArm && (
           <div className="field">
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
               <input

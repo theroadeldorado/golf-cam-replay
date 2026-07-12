@@ -63,6 +63,7 @@ export class PresenceGate {
   private _status: PresenceStatus = 'loading'
   private _bodyVisibility: BodyVisibility = 'none'
   private transitionStartMs = 0
+  private lastDetectMs = 0
   private lastConfidence = 0
   private lastLandmarks: NormalizedLandmark[] | null = null
 
@@ -174,13 +175,17 @@ export class PresenceGate {
     if (video.readyState < 2 || video.videoWidth === 0) return
 
     const nowMs = performance.now()
+    // MediaPipe requires strictly increasing integer timestamps
+    const timestampMs = Math.max(Math.round(nowMs), this.lastDetectMs + 1)
+    this.lastDetectMs = timestampMs
+
     let fullBodyDetected = false
     let confidence = 0
     let landmarks: NormalizedLandmark[] | null = null
     let bodyVis: BodyVisibility = 'none'
 
     try {
-      const result = this.landmarker.detectForVideo(video, nowMs)
+      const result = this.landmarker.detectForVideo(video, timestampMs)
       if (result.landmarks.length > 0) {
         landmarks = result.landmarks[0]
         bodyVis = checkBodyVisibility(landmarks)
@@ -195,7 +200,8 @@ export class PresenceGate {
         // Arm based on confidence (person detected), full-body is advisory only
         fullBodyDetected = confidence >= this.config.minConfidence
       }
-    } catch {
+    } catch (err) {
+      console.warn('[PRESENCE] Detection error:', err)
       return
     }
 
