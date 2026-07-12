@@ -211,7 +211,7 @@ describe('PresenceGate FSM', () => {
     expect(statuses).toContain('present')
 
     const presentEvent = onChange.mock.calls.find((c) => c[0].status === 'present')
-    expect(presentEvent[0].bodyVisibility).toBe('full')
+    expect(presentEvent![0].bodyVisibility).toBe('full')
 
     gate.stop()
     gate.dispose()
