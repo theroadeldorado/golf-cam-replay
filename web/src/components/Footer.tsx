@@ -8,8 +8,8 @@ const links = [
     external: true,
   },
   { label: 'Docs', href: '/docs', icon: BookOpen, external: false },
-  { label: 'Download', href: '#download', icon: Download, external: false },
-  { label: 'Report Bug', href: '#bug-report', icon: Bug, external: false },
+  { label: 'Download', href: '/#download', icon: Download, external: false },
+  { label: 'Report Bug', href: '/#bug-report', icon: Bug, external: false },
   {
     label: 'Venmo',
     href: 'https://account.venmo.com/u/theroad2eldorado?txn=pay&amount=20',

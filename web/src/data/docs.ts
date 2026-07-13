@@ -15,12 +15,12 @@ export const docSections: DocSection[] = [
       <ul>
         <li><strong>Windows 10 or 11</strong></li>
         <li>A USB webcam <em>or</em> a phone with a camera and a browser &mdash; no phone app needed</li>
+        <li>A microphone (built-in, USB, or phone mic) if using audio or hybrid trigger mode</li>
       </ul>
-      <p>No microphone required. ReplaySwing watches your swing through the camera itself.</p>
 
       <h3>Installation</h3>
       <ol>
-        <li>Download the installer from the <a href="#download">Download section</a> or the <a href="https://github.com/theroadeldorado/replay-swing/releases/latest" target="_blank" rel="noopener noreferrer">GitHub Releases</a> page.</li>
+        <li>Download the installer from the <a href="/#download">Download section</a> or the <a href="https://github.com/theroadeldorado/replay-swing/releases/latest" target="_blank" rel="noopener noreferrer">GitHub Releases</a> page.</li>
         <li>Run <code>ReplaySwing-Setup.exe</code> &mdash; no admin privileges required.</li>
         <li>Launch <strong>ReplaySwing</strong> from the Start Menu or desktop shortcut.</li>
       </ol>
@@ -44,6 +44,14 @@ export const docSections: DocSection[] = [
       <p>Plug in any USB webcam and click <strong>Add camera</strong> &mdash; ReplaySwing uses the same camera engine as Chrome, so if your camera works in a browser, it works here. Hot-plug is detected automatically.</p>
       <p>For best results, use a camera that supports <strong>720p or higher</strong>.</p>
 
+      <h3>Camera Controls</h3>
+      <p>Each camera tile has controls for adjusting the view:</p>
+      <ul>
+        <li><strong>Zoom</strong> &mdash; zoom in to crop the frame closer</li>
+        <li><strong>Rotate</strong> &mdash; rotate the image in 90&deg; increments</li>
+        <li><strong>Mirror</strong> &mdash; flip the image horizontally (useful for face-on cameras)</li>
+      </ul>
+
       <h3>Multi-Camera Recording</h3>
       <p>Add up to four cameras (USB and phones can mix). When a swing triggers, every camera saves its own clip from the same moment:</p>
       <ul>
@@ -52,8 +60,8 @@ export const docSections: DocSection[] = [
       </ul>
       <p>The live view auto-layouts cameras: 1 &rarr; full, 2 &rarr; side-by-side, 3&ndash;4 &rarr; 2&times;2 grid.</p>
 
-      <h3>The Trigger Camera</h3>
-      <p>One camera is the <strong>trigger camera</strong> &mdash; the one that watches for your swing. Pick it in Settings. A face-on or down-the-line camera with a clear view of you at address works best.</p>
+      <h3>The Primary Camera</h3>
+      <p>One camera is the <strong>primary camera</strong> &mdash; the one whose footage is used as the main replay angle. It&rsquo;s also the camera that drives the vision trigger and auto-arm pose detection. Pick it in Settings.</p>
     `,
   },
   {
@@ -76,6 +84,7 @@ export const docSections: DocSection[] = [
         <li>Keep the pairing page open &mdash; the app keeps your phone's screen awake for you.</li>
         <li>Use <strong>Flip camera</strong> on the phone to switch between front and back lenses.</li>
         <li>If the phone locks or drops, ReplaySwing holds its spot and reconnects when the page returns.</li>
+        <li>Phone microphones can be used as your audio trigger source &mdash; select the phone in the Microphone setting.</li>
       </ul>
 
       <h3>Requirements</h3>
@@ -87,26 +96,50 @@ export const docSections: DocSection[] = [
     `,
   },
   {
-    id: 'vision-trigger',
-    title: 'Swing Detection',
+    id: 'trigger-modes',
+    title: 'Trigger Modes',
     iconName: 'Circle',
     content: `
-      <p>ReplaySwing detects swings by <em>watching</em>, not listening. No microphone, no impact sound tuning.</p>
+      <p>ReplaySwing supports three trigger modes, selectable in Settings:</p>
 
-      <h3>How It Works</h3>
-      <p>A golf swing has an unmistakable motion signature: you settle into address and hold still, then move fast. When armed, the app looks for exactly that sequence on the trigger camera:</p>
+      <h3>Hybrid (Recommended)</h3>
+      <p>Combines motion detection with audio confirmation for the most reliable triggering. The app watches the primary camera for the swing sequence &mdash; still address followed by fast motion &mdash; then confirms with the impact sound from your microphone. This virtually eliminates false triggers.</p>
+
+      <h3>Audio Only</h3>
+      <p>Listens for any loud sound above the configured threshold. Simple and works with any camera angle, but can trigger on non-swing sounds. Good for environments where the camera can&rsquo;t see the golfer clearly.</p>
+
+      <h3>Manual Only</h3>
+      <p>No automatic triggering. Press <strong>Record now</strong> (or <kbd>T</kbd>) to capture whenever you want. The buffer is always running while cameras are live, so the pre-roll footage is still captured.</p>
+
+      <h3>The Tally Strip</h3>
+      <p>The tally strip across the top of the window shows the current trigger state, readable from across the bay:</p>
       <ol>
         <li><strong>WATCHING</strong> (amber) &mdash; armed, waiting for you to address the ball.</li>
-        <li><strong>SET</strong> (green) &mdash; you've been still for a moment; the trigger is live.</li>
+        <li><strong>SET</strong> (green) &mdash; you&rsquo;ve been still for a moment; the trigger is live.</li>
         <li><strong>CAPTURE</strong> (red) &mdash; swing detected; the clip is being saved.</li>
       </ol>
-      <p>The tally strip across the top of the window shows the current state, readable from across the bay. Walking through the frame or a practice waggle won't fire it &mdash; only a still address followed by a swing.</p>
+    `,
+  },
+  {
+    id: 'auto-arm',
+    title: 'Auto-Arm',
+    iconName: 'Star',
+    content: `
+      <p>Enable <strong>Auto-arm when a person steps into view</strong> in Settings for fully hands-free operation.</p>
 
-      <h3>Sensitivity</h3>
-      <p>The detector calibrates itself to your camera and lighting automatically. If it misses soft swings (or fires too eagerly), adjust <strong>Trigger sensitivity</strong> in Settings: Low needs a hard swing, High fires on chips and putts.</p>
+      <h3>How It Works</h3>
+      <p>ReplaySwing uses pose detection on the primary camera to detect when someone is standing in frame. When a person is detected for about 1.5 seconds, the system automatically arms. When they leave the frame for about 5 seconds, it disarms.</p>
 
-      <h3>Manual Trigger</h3>
-      <p>The <strong>Record now</strong> button (or <kbd>T</kbd>) captures the last few seconds at any moment, armed or not &mdash; the buffer is always running while cameras are live.</p>
+      <h3>Manual Override</h3>
+      <p>Manual arm/disarm always takes priority. If you manually disarm while auto-arm is active, the system stays disarmed until you leave the frame and return (a full reset cycle). You can always arm or disarm manually regardless of the auto-arm setting.</p>
+
+      <h3>Works With Any Trigger Mode</h3>
+      <p>Auto-arm controls <em>when</em> the system is armed. The trigger mode (hybrid, audio, manual) controls <em>what</em> causes a capture. They work together:</p>
+      <ul>
+        <li><strong>Hybrid + auto-arm</strong> &mdash; walk up, system arms, swing triggers on motion + sound</li>
+        <li><strong>Audio + auto-arm</strong> &mdash; walk up, system arms, swing triggers on impact sound</li>
+        <li><strong>Manual + auto-arm</strong> &mdash; walk up, system arms, press Record to capture</li>
+      </ul>
     `,
   },
   {
@@ -242,48 +275,61 @@ export const docSections: DocSection[] = [
     iconName: 'Settings',
     content: `
       <table>
-        <thead><tr><th>Setting</th><th>Range</th><th>What it does</th></tr></thead>
+        <thead><tr><th>Setting</th><th>Options / Range</th><th>What it does</th></tr></thead>
         <tbody>
+          <tr><td>Shots folder</td><td>Any directory</td><td>Where sessions and clips are saved (default: <code>~/GolfSwings/</code>)</td></tr>
+          <tr><td>Trigger mode</td><td>Hybrid / Audio / Manual</td><td>How auto-recording is triggered &mdash; hybrid is recommended</td></tr>
+          <tr><td>Microphone</td><td>Any mic or phone</td><td>Audio source for the trigger (shown when trigger uses audio)</td></tr>
+          <tr><td>Trigger threshold</td><td>0.01&ndash;0.4</td><td>Audio level that fires the trigger &mdash; lower is more sensitive</td></tr>
           <tr><td>Pre-roll</td><td>0.5&ndash;5s</td><td>Seconds kept from before the trigger &mdash; covers your backswing</td></tr>
           <tr><td>Post-roll</td><td>1&ndash;8s</td><td>Seconds recorded after the trigger &mdash; covers the finish and ball flight</td></tr>
-          <tr><td>Trigger sensitivity</td><td>Low / Medium / High</td><td>How hard a motion spike must be to fire</td></tr>
-          <tr><td>Trigger camera</td><td>Any camera</td><td>Which camera watches for the swing</td></tr>
+          <tr><td>Primary camera</td><td>Any camera</td><td>Which camera is used as the main replay angle and for vision detection</td></tr>
+          <tr><td>Auto-arm</td><td>On / Off</td><td>Automatically arm when a person steps into the primary camera&rsquo;s view</td></tr>
         </tbody>
       </table>
-      <p>Settings save automatically to <code>~/GolfSwings/settings.v2.json</code>. Window and PiP positions are remembered too.</p>
+      <p>Settings save automatically to <code>~/GolfSwings/settings.v2.json</code>. Window and PiP positions are remembered too. The current app version is displayed at the bottom of the settings panel.</p>
     `,
   },
   {
-    id: 'troubleshooting',
-    title: 'Troubleshooting',
+    id: 'feedback',
+    title: 'Feedback & Bug Reports',
     iconName: 'LifeBuoy',
     content: `
-      <h3>The trigger doesn't fire</h3>
+      <h3>In-App Feedback</h3>
+      <p>Click the <strong>Feedback</strong> button in the app toolbar to submit a bug report or feature request directly from ReplaySwing. Your system info (OS, app version, camera count) is attached automatically. Feedback is submitted as a GitHub issue &mdash; no browser window opens, it&rsquo;s all handled in the app.</p>
+
+      <h3>Website Bug Report</h3>
+      <p>Use the <a href="/#bug-report">bug report form</a> on the website to file issues from any device.</p>
+
+      <h3>Troubleshooting</h3>
+
+      <h4>The trigger doesn't fire</h4>
       <ul>
         <li>Check the tally strip: it must reach green (<strong>SET</strong>) before a swing counts. Hold still at address for about a second.</li>
-        <li>Raise <strong>Trigger sensitivity</strong> in Settings.</li>
-        <li>Make sure the <strong>trigger camera</strong> actually sees you &mdash; check which camera is selected in Settings.</li>
+        <li>If using hybrid or audio mode, check that your microphone is working &mdash; the level preview in Settings should bounce when you clap.</li>
+        <li>Lower the <strong>trigger threshold</strong> in Settings to make it more sensitive.</li>
+        <li>Make sure the <strong>primary camera</strong> actually sees you &mdash; check which camera is selected in Settings.</li>
       </ul>
 
-      <h3>It fires when it shouldn't</h3>
+      <h4>It fires when it shouldn't</h4>
       <ul>
-        <li>Lower the sensitivity.</li>
-        <li>Point the trigger camera so people walking behind you aren't in frame.</li>
+        <li>Raise the trigger threshold.</li>
+        <li>Switch to <strong>Hybrid</strong> mode &mdash; it requires both motion and sound, which virtually eliminates false triggers.</li>
+        <li>Point the primary camera so people walking behind you aren't in frame.</li>
       </ul>
 
-      <h3>Phone won't connect</h3>
+      <h4>Phone won't connect</h4>
       <ul>
         <li>Phone and PC must be on the <strong>same Wi-Fi</strong>. Turn off cellular data to be sure.</li>
         <li>Guest and hotel-style networks often block devices from seeing each other.</li>
         <li>Re-scan the QR code &mdash; pairing codes expire after a few minutes.</li>
       </ul>
 
-      <h3>Capture problems on a specific PC</h3>
+      <h4>Capture problems on a specific PC</h4>
       <p>Run the built-in hardware check from Command Prompt and include its output in a bug report:</p>
       <pre><code>"%LOCALAPPDATA%\\Programs\\ReplaySwing\\ReplaySwing.exe" --spike=encode</code></pre>
 
-      <h3>Reporting bugs</h3>
-      <p>Use the <a href="/#support">bug report form</a> &mdash; logs live in <code>~/GolfSwings/logs/</code> if you want to attach detail.</p>
+      <p>Logs live in <code>~/GolfSwings/logs/</code> if you want to attach detail.</p>
     `,
   },
 ];
