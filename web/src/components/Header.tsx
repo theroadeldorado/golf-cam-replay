@@ -35,13 +35,13 @@ export default function Header() {
         {/* Desktop nav */}
         <nav className="hidden items-center gap-8 md:flex">
           {navLinks.map((link) => (
-            <a
+            <Link
               key={link.href}
               href={link.href}
               className="text-sm font-medium text-muted transition-colors hover:text-fg"
             >
               {link.label}
-            </a>
+            </Link>
           ))}
         </nav>
 
@@ -59,14 +59,14 @@ export default function Header() {
       {mobileOpen && (
         <nav className="space-y-1 border-t border-line bg-panel px-6 py-4 md:hidden">
           {navLinks.map((link) => (
-            <a
+            <Link
               key={link.href}
               href={link.href}
               className="block rounded-md px-2 py-2 text-sm font-medium text-muted transition-colors hover:bg-panel-raised hover:text-fg"
               onClick={() => setMobileOpen(false)}
             >
               {link.label}
-            </a>
+            </Link>
           ))}
         </nav>
       )}
