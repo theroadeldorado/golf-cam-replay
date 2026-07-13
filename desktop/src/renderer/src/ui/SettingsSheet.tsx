@@ -141,10 +141,12 @@ export function SettingsSheet({
   const [mics, setMics] = useState<MicInfo[]>([])
   const [dataDir, setDataDir] = useState<string>('')
   const [dataDirChanged, setDataDirChanged] = useState(false)
+  const [appVersion, setAppVersion] = useState<string>('')
 
   useEffect(() => {
     void listMics().then(setMics)
     void window.api.invoke('dataDir:get').then(setDataDir)
+    void window.api.invoke('app:version').then(setAppVersion)
   }, [])
 
   const chooseDataDir = async (): Promise<void> => {
@@ -317,6 +319,12 @@ export function SettingsSheet({
         <button onClick={onClose} style={{ marginTop: 8 }}>
           Done
         </button>
+
+        {appVersion && (
+          <p style={{ marginTop: 16, fontSize: 11, opacity: 0.4, textAlign: 'center' }}>
+            v{appVersion}
+          </p>
+        )}
       </div>
     </>
   )
