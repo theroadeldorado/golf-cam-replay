@@ -23,13 +23,15 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and add your GitHub token:
+Copy `.env.example` to `.env.local` and fill in the values:
 
-```
-GITHUB_TOKEN=your_github_pat_here
-```
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `GITHUB_TOKEN` | Yes | Bug-report form + latest-release download links. Needs **Issues: Read and write** on `theroadeldorado/replay-swing`. |
+| `NEXT_PUBLIC_GA_MEASUREMENT_ID` | Optional | Google Analytics 4 measurement ID. |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Prod only | Backs the phone-camera signaling relay (`/api/signal`). Local dev falls back to an in-memory store. |
 
-The token needs **Issues: Read and write** permission on `theroadeldorado/replay-swing`. It's used by:
+`GITHUB_TOKEN` is used by:
 
 - **Bug report form** (`/api/bug-report`) — creates GitHub issues from user submissions
 - **Download section** — fetches the latest release info from the GitHub API (revalidates hourly)
@@ -40,30 +42,21 @@ The token needs **Issues: Read and write** permission on `theroadeldorado/replay
 src/
 ├── app/
 │   ├── layout.tsx              # Root layout, fonts, metadata
-│   ├── page.tsx                # Single-page site (all sections)
+│   ├── page.tsx                # Landing page
 │   ├── globals.css             # Tailwind theme + custom styles
 │   ├── docs/                   # Documentation page
-│   │   ├── layout.tsx
-│   │   └── page.tsx
-│   └── api/bug-report/
-│       └── route.ts            # GitHub Issues API proxy
-├── components/
-│   ├── Header.tsx              # Sticky nav with mobile menu
-│   ├── Hero.tsx                # Hero with app mockup
-│   ├── Features.tsx            # Feature grid (10 cards)
-│   ├── HowItWorks.tsx          # 3-step setup guide
-│   ├── PipDemo.tsx             # PiP overlay explanation
-│   ├── Download.tsx            # Download CTA with GitHub release info
-│   ├── Support.tsx             # Venmo donation section
-│   ├── BugReport.tsx           # Bug report form
-│   ├── Footer.tsx              # Footer with links
-│   └── docs/                   # Docs page components
-│       ├── DocsSection.tsx
-│       └── DocsSidebar.tsx
+│   ├── camera/                 # Phone-camera capture page (opened via QR)
+│   └── api/
+│       ├── bug-report/route.ts             # GitHub Issues API proxy
+│       └── signal/[session]/[role]/route.ts # WebRTC signaling relay (Redis)
+├── components/                 # Header, Hero, Features, HowItWorks,
+│   │                           #   PipDemo, Download(+Button), Support,
+│   │                           #   BugReport, Footer, GoogleAnalytics
+│   ├── docs/                   # Docs page components
+│   └── illustrations/          # Inline SVG illustrations
 ├── data/
 │   └── docs.ts                 # Documentation content data
-└── lib/
-    └── github.ts               # GitHub API helpers
+└── lib/                        # github.ts (GitHub API) + signaling.ts helpers
 ```
 
 ## Deployment

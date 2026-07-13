@@ -1,8 +1,10 @@
 # ReplaySwing v2 (desktop)
 
 Electron + TypeScript rewrite of the swing capture app. Cameras run on
-Chromium's media stack (no OpenCV), the trigger is vision-based (no
-microphone), and phones connect by scanning a QR code (no DroidCam).
+Chromium's media stack (WebCodecs H.264, no OpenCV), the trigger is a hybrid
+motion + audio FSM with optional pose/presence gating, and phones connect by
+scanning a QR code (no DroidCam). Captured swings support multi-camera replay,
+per-camera comparison, slow-mo, drawing tools, and share-to-phone / save-to-disk.
 
 ## Develop
 
@@ -39,10 +41,16 @@ exactly which encoder configs the machine supports and whether it keeps up.
 - **Renderer** (`src/renderer/`): all media. One worker per camera
   (`capture/encoder.worker.ts`): frames → WebCodecs H.264 → `ChunkRing`
   (keyframe-aligned circular buffer) → on trigger, mux pre+post roll to MP4.
-  The vision trigger (`trigger/vision-trigger.ts`) is a pure FSM fed by
-  motion energy sampled in the primary camera's worker. Phone cameras arrive
-  over WebRTC (`cameras/phone-source.ts`), signaled through
-  replayswing.com/api/signal.
+  The swing trigger (`trigger/swing-trigger.ts`) is a pure, unit-tested FSM:
+  a vision-first path (stillness at address → motion spike → confirmed by an
+  impact sound) plus an audio-first path (loud burst + recent motion) so it
+  catches swings that skip the hold-still address. `trigger/audio-trigger.ts`
+  supplies the audio level and `trigger/presence-gate.ts` (MediaPipe pose) can
+  auto-arm capture only when a person is in frame. Phone cameras arrive over
+  WebRTC (`cameras/phone-source.ts`), signaled through replayswing.com/api/signal.
+- **Playback & analysis** (`src/renderer/src/`): `compare/` (side-by-side swing
+  comparison + slow-mo), `drawing/` (overlay annotation tools), `playback/`
+  (the composite program bus feeding the PiP window).
 - **PiP** (`src/renderer/src/pip/`): frameless always-on-top window fed by a
   WebRTC loopback of a composite canvas (`playback/program-bus.ts`).
 

@@ -24,3 +24,7 @@ __pycache__/
 *.key
 *.p12
 *.pfx
+
+# Claude Code / planning artifacts (CLAUDE.md at repo root stays tracked)
+.claude/
+docs/superpowers/

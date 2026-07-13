@@ -48,9 +48,12 @@ relay in production (falls back to in-memory for local dev).
   `src/shared/ipc-contract.ts`.
 - **Renderer** owns all media: one worker per camera (`capture/encoder.worker.ts`)
   runs frames → WebCodecs H.264 → ChunkRing (keyframe-aligned circular buffer) →
-  mp4-muxer on trigger. The vision trigger (`trigger/vision-trigger.ts`) is a pure,
-  unit-tested FSM (stillness at address → motion spike) fed by downscaled motion
-  energy from the primary camera's worker. No microphone anywhere.
+  mp4-muxer on trigger. The swing trigger (`trigger/swing-trigger.ts`) is a pure,
+  unit-tested hybrid FSM: a vision-first path (stillness at address → motion spike
+  → confirmed by an impact sound) plus an audio-first path (loud burst + recent
+  motion). Motion energy comes from the primary camera's worker; audio level from
+  `trigger/audio-trigger.ts`; `trigger/presence-gate.ts` (MediaPipe pose) can
+  auto-arm capture only when a person is in frame.
 - **Phone cameras**: QR → `replayswing.com/camera?s={session}` → WebRTC offer,
   signaled through polling API routes; media is P2P on the LAN. No DroidCam.
 - **PiP overlay**: separate frameless always-on-top window fed by a WebRTC loopback
