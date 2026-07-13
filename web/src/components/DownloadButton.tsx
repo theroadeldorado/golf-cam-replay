@@ -34,7 +34,7 @@ export default function DownloadButton({
       href={href}
       {...(fallback ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
       onClick={() => trackDownload(fileName, version)}
-      className="inline-flex items-center gap-2 bg-green-accent hover:bg-green-hover text-white font-semibold px-8 py-4 rounded transition-colors shadow-lg shadow-green-accent/20 text-lg"
+      className="inline-flex items-center gap-2 rounded-lg bg-lock px-8 py-4 text-lg font-semibold text-ink shadow-lg shadow-lock/20 transition-colors hover:bg-lock-bright"
     >
       <DownloadIcon size={22} />
       Download {version ?? 'Latest'}

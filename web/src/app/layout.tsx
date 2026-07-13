@@ -1,11 +1,21 @@
 import type { Metadata } from 'next';
-import { Playfair_Display, Inter } from 'next/font/google';
+import { Archivo, IBM_Plex_Mono, Inter } from 'next/font/google';
 import GoogleAnalytics from '@/components/GoogleAnalytics';
 import './globals.css';
 
-const playfair = Playfair_Display({
+// Matches the desktop app: Archivo wide caps for headings/state words,
+// IBM Plex Mono for data labels, Inter for body copy.
+const archivo = Archivo({
   subsets: ['latin'],
-  variable: '--font-serif',
+  variable: '--font-display',
+  weight: ['500', '600', '700', '800'],
+  display: 'swap',
+});
+
+const plexMono = IBM_Plex_Mono({
+  subsets: ['latin'],
+  variable: '--font-mono',
+  weight: ['400', '500', '600'],
   display: 'swap',
 });
 
@@ -42,7 +52,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${playfair.variable} ${inter.variable}`}>
+    <html
+      lang="en"
+      className={`${archivo.variable} ${plexMono.variable} ${inter.variable}`}
+    >
       <body className="antialiased">
         <GoogleAnalytics />
         {children}

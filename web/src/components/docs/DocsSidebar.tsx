@@ -27,19 +27,19 @@ export default function DocsSidebar({ sections }: { sections: DocSection[] }) {
   }, [sections]);
 
   return (
-    <nav className="sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto pr-4 -mr-4">
-      <p className="text-xs font-semibold text-bronze/60 uppercase tracking-wider mb-3">
+    <nav className="sticky top-28 -mr-4 max-h-[calc(100vh-9rem)] overflow-y-auto pr-4">
+      <p className="mb-3 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">
         On this page
       </p>
-      <ul className="space-y-1">
+      <ul className="space-y-0.5 border-l border-line">
         {sections.map((section) => (
           <li key={section.id}>
             <a
               href={`#${section.id}`}
-              className={`block text-sm py-1.5 px-3 rounded-lg transition-colors ${
+              className={`-ml-px block border-l-2 py-1.5 pl-4 text-sm transition-colors ${
                 activeId === section.id
-                  ? 'bg-cream text-espresso font-medium border border-sand/60'
-                  : 'text-bronze hover:text-espresso hover:bg-cream/50'
+                  ? 'border-lock font-medium text-fg'
+                  : 'border-transparent text-muted hover:border-line-bright hover:text-fg'
               }`}
             >
               {section.title}

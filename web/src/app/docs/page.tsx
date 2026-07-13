@@ -7,12 +7,14 @@ export default function DocsPage() {
     <div className="pt-28 pb-20 md:pt-36 md:pb-28">
       <div className="mx-auto max-w-7xl px-6">
         {/* Page header */}
-        <div className="max-w-3xl mb-12">
-          <h1 className="font-serif text-4xl md:text-5xl font-bold text-espresso">
+        <div className="mb-12 max-w-3xl">
+          <p className="mb-3 font-mono text-xs uppercase tracking-[0.2em] text-lock">Docs</p>
+          <h1 className="font-display text-4xl font-extrabold tracking-tight text-fg md:text-5xl">
             Documentation
           </h1>
-          <p className="mt-4 text-lg text-bronze">
-            Everything you need to set up and get the most out of ReplaySwing.
+          <p className="mt-4 text-lg text-muted">
+            Everything you need to set up and get the most out of ReplaySwing — with a diagram for
+            every step.
           </p>
         </div>
 

@@ -1,37 +1,106 @@
 @import "tailwindcss";
 
-@theme {
-  --color-cream: #FAF6F1;
-  --color-warm-white: #FFFFFF;
-  --color-sand: #E8DDD3;
-  --color-tan: #C4A882;
-  --color-gold: #B8944A;
-  --color-bronze: #8B7355;
-  --color-espresso: #3D2E1F;
-  --color-charcoal: #2A2A2A;
-  --color-green-accent: #4A7C59;
-  --color-green-hover: #3D6A4A;
+/* ReplaySwing web — mirrors the desktop app's instrument-panel design system.
+   Near-black bays, thin panel lines, and three machine-state accent lamps:
+   amber = watching, green = locked/ready, red = capture. Archivo wide caps for
+   headings, IBM Plex Mono for data labels, Inter for body copy. */
 
-  --font-serif: "Playfair Display", Georgia, serif;
+@theme {
+  /* Surfaces (from the app's styles.css) */
+  --color-ink: #0b0d0c;
+  --color-panel: #14181a;
+  --color-panel-raised: #1a2020;
+  --color-line: #232a28;
+  --color-line-bright: #2e3733;
+
+  /* Text */
+  --color-fg: #e9ede9;
+  --color-muted: #7f8a83;
+  --color-faint: #566058;
+
+  /* State lamps */
+  --color-watch: #d9a13c; /* amber — armed, watching for address */
+  --color-lock: #43b06c; /* green — locked, ready, primary accent */
+  --color-lock-bright: #5ec583;
+  --color-fire: #d6483c; /* red — capturing */
+
+  --font-display: "Archivo", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --font-sans: "Inter", system-ui, sans-serif;
 }
 
 html {
   scroll-behavior: smooth;
+  color-scheme: dark;
 }
 
 body {
-  background-color: var(--color-cream);
-  color: var(--color-espresso);
+  background-color: var(--color-ink);
+  color: var(--color-fg);
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Scoped prose styles for documentation sections */
+::selection {
+  background: color-mix(in srgb, var(--color-lock) 40%, transparent);
+  color: var(--color-fg);
+}
+
+/* Thin custom scrollbars to match the dark chrome */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-bright) transparent;
+}
+
+/* ---- Shared display / mono helpers (the app's typographic voice) ---- */
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.display-caps {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+/* Small uppercase monospace micro-labels, exactly like the app's field labels */
+.mono-label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+/* The tally strip motif — a 4px machine-state bar */
+.tally-strip {
+  height: 3px;
+  width: 100%;
+}
+.tally-strip[data-state="watching"] {
+  background: var(--color-watch);
+}
+.tally-strip[data-state="address"] {
+  background: var(--color-lock);
+}
+.tally-strip[data-state="capturing"] {
+  background: var(--color-fire);
+}
+
+/* ---- Documentation prose (dark) ---- */
+
+.docs-prose {
+  color: var(--color-muted);
+}
+
 .docs-prose h3 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--color-espresso);
-  margin-top: 1.5rem;
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--color-fg);
+  margin-top: 1.75rem;
   margin-bottom: 0.5rem;
 }
 
@@ -39,68 +108,111 @@ body {
   margin-top: 0;
 }
 
+.docs-prose h4 {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-watch);
+  margin-top: 1.5rem;
+  margin-bottom: 0.4rem;
+}
+
 .docs-prose p {
-  color: var(--color-bronze);
-  line-height: 1.7;
-  margin-bottom: 0.75rem;
+  color: var(--color-muted);
+  line-height: 1.75;
+  margin-bottom: 0.85rem;
 }
 
 .docs-prose ul,
 .docs-prose ol {
-  color: var(--color-bronze);
-  line-height: 1.7;
-  margin-bottom: 0.75rem;
-  padding-left: 1.5rem;
+  color: var(--color-muted);
+  line-height: 1.75;
+  margin-bottom: 0.85rem;
+  padding-left: 1.4rem;
 }
 
 .docs-prose ul {
-  list-style-type: disc;
+  list-style-type: none;
+}
+
+.docs-prose ul > li {
+  position: relative;
+}
+
+.docs-prose ul > li::before {
+  content: "";
+  position: absolute;
+  left: -1.05rem;
+  top: 0.6em;
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--color-lock);
 }
 
 .docs-prose ol {
   list-style-type: decimal;
 }
 
+.docs-prose ol::marker,
+.docs-prose li::marker {
+  color: var(--color-faint);
+}
+
 .docs-prose li {
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.4rem;
+}
+
+.docs-prose strong {
+  color: var(--color-fg);
+  font-weight: 600;
+}
+
+.docs-prose em {
+  color: var(--color-fg);
+  font-style: italic;
 }
 
 .docs-prose code {
-  font-size: 0.85em;
-  background-color: var(--color-cream);
-  border: 1px solid var(--color-sand);
-  border-radius: 0.25rem;
-  padding: 0.1em 0.35em;
-  color: var(--color-espresso);
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  background-color: var(--color-ink);
+  border: 1px solid var(--color-line);
+  border-radius: 0.3rem;
+  padding: 0.1em 0.4em;
+  color: var(--color-lock-bright);
 }
 
 .docs-prose pre {
-  background-color: var(--color-charcoal);
-  border-radius: 0.5rem;
+  background-color: #05070699;
+  border: 1px solid var(--color-line);
+  border-radius: 0.6rem;
   padding: 1rem 1.25rem;
   overflow-x: auto;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.85rem;
 }
 
 .docs-prose pre code {
   background: none;
   border: none;
   padding: 0;
-  color: #e2e8f0;
+  color: #cbd5cf;
   font-size: 0.8rem;
   line-height: 1.6;
 }
 
 .docs-prose kbd {
   display: inline-block;
-  font-size: 0.8em;
-  font-family: var(--font-sans);
-  background-color: var(--color-warm-white);
-  border: 1px solid var(--color-sand);
+  font-family: var(--font-mono);
+  font-size: 0.75em;
+  background-color: var(--color-panel-raised);
+  border: 1px solid var(--color-line-bright);
   border-bottom-width: 2px;
-  border-radius: 0.25rem;
-  padding: 0.1em 0.4em;
-  color: var(--color-espresso);
+  border-radius: 0.3rem;
+  padding: 0.15em 0.45em;
+  color: var(--color-fg);
   white-space: nowrap;
 }
 
@@ -113,16 +225,20 @@ body {
 
 .docs-prose thead th {
   text-align: left;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
   font-weight: 600;
-  color: var(--color-espresso);
-  border-bottom: 2px solid var(--color-sand);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  border-bottom: 1px solid var(--color-line-bright);
   padding: 0.5rem 0.75rem;
 }
 
 .docs-prose tbody td {
-  color: var(--color-bronze);
-  border-bottom: 1px solid var(--color-sand);
-  padding: 0.5rem 0.75rem;
+  color: var(--color-muted);
+  border-bottom: 1px solid var(--color-line);
+  padding: 0.6rem 0.75rem;
   vertical-align: top;
 }
 
@@ -131,17 +247,13 @@ body {
 }
 
 .docs-prose a {
-  color: var(--color-gold);
+  color: var(--color-lock-bright);
   text-decoration: underline;
   text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, var(--color-lock) 40%, transparent);
   transition: color 0.15s;
 }
 
 .docs-prose a:hover {
-  color: var(--color-espresso);
-}
-
-.docs-prose strong {
-  color: var(--color-espresso);
-  font-weight: 600;
+  color: var(--color-fg);
 }

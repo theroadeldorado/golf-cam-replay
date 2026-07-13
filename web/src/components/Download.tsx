@@ -1,4 +1,4 @@
-import { Download as DownloadIcon, ExternalLink } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { getLatestRelease, formatBytes } from '@/lib/github';
 import DownloadButton from './DownloadButton';
 
@@ -14,21 +14,22 @@ export default async function Download() {
   const release = await getLatestRelease();
 
   return (
-    <section id="download" className="py-20 md:py-28 bg-warm-white">
+    <section id="download" className="border-t border-line bg-panel/40 py-20 md:py-28">
       <div className="mx-auto max-w-7xl px-6">
-        <div className="text-center max-w-3xl mx-auto">
-          <h2 className="font-serif text-4xl md:text-5xl font-bold text-espresso">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="mb-3 font-mono text-xs uppercase tracking-[0.2em] text-lock">Download</p>
+          <h2 className="font-display text-4xl font-extrabold tracking-tight text-fg md:text-5xl">
             Download ReplaySwing
           </h2>
-          <p className="mt-4 text-lg text-bronze">
+          <p className="mt-4 text-lg text-muted">
             Free and open source. No account needed, no strings attached.
           </p>
 
           <div className="mt-10 flex justify-center">
-            <div className="bg-cream rounded-2xl border border-sand p-8 flex flex-col items-center max-w-md w-full">
-              <div className="flex items-center justify-center gap-2 text-bronze mb-6">
-                <WindowsIcon size={20} />
-                <span className="text-sm font-medium">Windows 10 / 11</span>
+            <div className="flex w-full max-w-md flex-col items-center rounded-2xl border border-line bg-panel p-8">
+              <div className="mb-6 flex items-center justify-center gap-2 font-mono text-xs uppercase tracking-wider text-muted">
+                <WindowsIcon size={18} />
+                <span>Windows 10 / 11</span>
               </div>
 
               {release?.windows && release.version ? (
@@ -38,7 +39,7 @@ export default async function Download() {
                     version={release.version}
                     fileName={release.windows.fileName}
                   />
-                  <p className="mt-4 text-sm text-bronze">
+                  <p className="mt-4 font-mono text-xs text-muted">
                     {release.windows.fileName} &middot; {formatBytes(release.windows.fileSize)}
                   </p>
                 </>
@@ -56,7 +57,7 @@ export default async function Download() {
               href="https://github.com/theroadeldorado/replay-swing/releases"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm text-gold hover:text-espresso transition-colors font-medium"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-lock-bright transition-colors hover:text-fg"
             >
               View all releases on GitHub
               <ExternalLink size={14} />

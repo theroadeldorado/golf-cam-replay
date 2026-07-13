@@ -95,29 +95,30 @@ const features = [
 
 export default function Features() {
   return (
-    <section id="features" className="py-20 md:py-28">
+    <section id="features" className="border-t border-line py-20 md:py-28">
       <div className="mx-auto max-w-7xl px-6">
-        <div className="text-center max-w-2xl mx-auto mb-16">
-          <h2 className="font-serif text-4xl md:text-5xl font-bold text-espresso">
-            Everything You Need
+        <div className="mx-auto mb-16 max-w-2xl text-center">
+          <p className="mb-3 font-mono text-xs uppercase tracking-[0.2em] text-lock">Features</p>
+          <h2 className="font-display text-4xl font-extrabold tracking-tight text-fg md:text-5xl">
+            Everything you need
           </h2>
-          <p className="mt-4 text-lg text-bronze">
-            Built specifically for golf simulator setups. Every feature designed to help you improve
-            without leaving your bay.
+          <p className="mt-4 text-lg text-muted">
+            Built specifically for golf simulator setups. Every feature designed to help you
+            improve without leaving your bay.
           </p>
         </div>
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((feature) => (
             <div
               key={feature.title}
-              className="bg-warm-white rounded-2xl p-6 border border-sand/60 hover:border-tan/60 transition-colors shadow-sm hover:shadow-md hover:shadow-tan/10"
+              className="group rounded-xl border border-line bg-panel p-6 transition-colors hover:border-line-bright hover:bg-panel-raised"
             >
-              <div className="w-12 h-12 rounded-xl bg-cream flex items-center justify-center mb-4">
-                <feature.icon size={24} className="text-gold" />
+              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg border border-line bg-ink transition-colors group-hover:border-lock/40">
+                <feature.icon size={22} className="text-lock" />
               </div>
-              <h3 className="font-semibold text-lg text-espresso mb-2">{feature.title}</h3>
-              <p className="text-bronze text-sm leading-relaxed">{feature.description}</p>
+              <h3 className="mb-2 font-display text-base font-bold text-fg">{feature.title}</h3>
+              <p className="text-sm leading-relaxed text-muted">{feature.description}</p>
             </div>
           ))}
         </div>

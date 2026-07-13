@@ -2,6 +2,9 @@ export interface DocSection {
   id: string;
   title: string;
   iconName: string;
+  /** Optional schematic illustration key (see IllustrationFigure). */
+  illustration?: string;
+  illustrationCaption?: string;
   content: string;
 }
 
@@ -10,6 +13,8 @@ export const docSections: DocSection[] = [
     id: 'getting-started',
     title: 'Getting Started',
     iconName: 'Rocket',
+    illustration: 'appWindow',
+    illustrationCaption: 'The app armed — tally strip amber, WATCHING on the console',
     content: `
       <h3>Prerequisites</h3>
       <ul>
@@ -39,6 +44,8 @@ export const docSections: DocSection[] = [
     id: 'camera-setup',
     title: 'Camera Setup',
     iconName: 'Camera',
+    illustration: 'garageSim',
+    illustrationCaption: 'A garage bay — USB camera down-the-line, phone face-on, both watching the golfer',
     content: `
       <h3>USB Cameras</h3>
       <p>Plug in any USB webcam and click <strong>Add camera</strong> &mdash; ReplaySwing uses the same camera engine as Chrome, so if your camera works in a browser, it works here. Hot-plug is detected automatically.</p>
@@ -68,6 +75,8 @@ export const docSections: DocSection[] = [
     id: 'phone-as-camera',
     title: 'Phone as Camera',
     iconName: 'Smartphone',
+    illustration: 'phoneCamera',
+    illustrationCaption: 'Scan the QR code and your phone becomes a wireless camera in its browser',
     content: `
       <p>Any phone becomes a wireless camera in about ten seconds &mdash; no app to install.</p>
 
@@ -99,6 +108,8 @@ export const docSections: DocSection[] = [
     id: 'trigger-modes',
     title: 'Trigger Modes',
     iconName: 'Circle',
+    illustration: 'tallyStates',
+    illustrationCaption: 'The tally strip: WATCHING (amber) → SET (green) → CAPTURE (red)',
     content: `
       <p>ReplaySwing supports three trigger modes, selectable in Settings:</p>
 
@@ -124,6 +135,8 @@ export const docSections: DocSection[] = [
     id: 'auto-arm',
     title: 'Auto-Arm',
     iconName: 'Star',
+    illustration: 'autoArm',
+    illustrationCaption: 'Step into frame and the system arms itself; leave and it disarms',
     content: `
       <p>Enable <strong>Auto-arm when a person steps into view</strong> in Settings for fully hands-free operation.</p>
 
@@ -164,6 +177,8 @@ export const docSections: DocSection[] = [
     id: 'drawing-tools',
     title: 'Drawing Tools',
     iconName: 'PenTool',
+    illustration: 'drawingTools',
+    illustrationCaption: 'A swing-plane line and an alignment circle drawn on a clip',
     content: `
       <p>Mark up any swing with lines and circles &mdash; a swing-plane line, an alignment circle on the ball or your head.</p>
 
@@ -182,6 +197,8 @@ export const docSections: DocSection[] = [
     id: 'compare-swings',
     title: 'Compare Swings',
     iconName: 'Columns2',
+    illustration: 'compareSwings',
+    illustrationCaption: 'Two swings on one synced timeline, nudged into alignment at impact',
     content: `
       <p>Put two swings side by side to see what changed &mdash; today&rsquo;s move against a reference from last week.</p>
 
@@ -222,6 +239,8 @@ export const docSections: DocSection[] = [
     id: 'pip',
     title: 'PiP Overlay',
     iconName: 'PictureInPicture2',
+    illustration: 'pipOverlay',
+    illustrationCaption: 'The replay window floats on top of your fullscreen simulator',
     content: `
       <p>The PiP window floats on top of everything &mdash; including your fullscreen simulator &mdash; and mirrors whatever ReplaySwing is showing: live cameras between shots, the looping replay after each swing.</p>
 
@@ -238,6 +257,8 @@ export const docSections: DocSection[] = [
     id: 'session-management',
     title: 'Sessions & Shots',
     iconName: 'FolderOpen',
+    illustration: 'sessions',
+    illustrationCaption: 'Every capture lands in the shot rail — pin the best, delete the mishits',
     content: `
       <h3>The Shot Rail</h3>
       <p>Every capture lands in the rail on the right with a thumbnail, shot number, and time. Click any shot to replay it on the main stage.</p>

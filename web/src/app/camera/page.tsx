@@ -154,7 +154,11 @@ function CameraClient() {
     await postSignal(sessionId, { type: 'offer', payload: { sdp: offer.sdp } })
   }, [sessionId, teardownPeer])
 
-  createPeerAndOfferRef.current = createPeerAndOffer
+  // Keep the ref pointing at the latest callback so the poll loop and reconnect
+  // timers (which fire after render) always call the current closure.
+  useEffect(() => {
+    createPeerAndOfferRef.current = createPeerAndOffer
+  }, [createPeerAndOffer])
 
   const connect = useCallback(async () => {
     if (!sessionId) return
@@ -216,7 +220,7 @@ function CameraClient() {
         // Transient polling errors are fine; next tick retries.
       }
     }, POLL_INTERVAL_MS)
-  }, [sessionId, facing, acquireWakeLock, cleanupConnection, createPeerAndOffer])
+  }, [sessionId, facing, acquireWakeLock, createPeerAndOffer, teardownPeer])
 
   const flipCamera = useCallback(async () => {
     const next = facing === 'environment' ? 'user' : 'environment'
@@ -254,11 +258,15 @@ function CameraClient() {
   useEffect(() => cleanupConnection, [cleanupConnection])
 
   return (
-    <main className="min-h-dvh bg-neutral-950 text-neutral-100 flex flex-col items-center justify-center gap-6 p-6 text-center">
+    <main className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-ink p-6 text-center text-fg">
+      <span className="font-display text-sm font-extrabold tracking-[0.14em] text-fg">
+        REPLAY<span className="text-lock">SWING</span>
+      </span>
+
       {status === 'no-session' && (
         <>
-          <h1 className="text-2xl font-semibold">ReplaySwing Camera</h1>
-          <p className="text-neutral-400 max-w-sm">
+          <h1 className="font-display text-2xl font-bold">Phone Camera</h1>
+          <p className="max-w-sm text-muted">
             Open this page by scanning the QR code shown in the ReplaySwing desktop app
             (Add Camera → Phone).
           </p>
@@ -267,14 +275,14 @@ function CameraClient() {
 
       {status === 'idle' && (
         <>
-          <h1 className="text-2xl font-semibold">ReplaySwing Camera</h1>
-          <p className="text-neutral-400 max-w-sm">
+          <h1 className="font-display text-2xl font-bold">Phone Camera</h1>
+          <p className="max-w-sm text-muted">
             Your phone is about to become a swing camera. Keep it on the same Wi-Fi as your
             simulator PC.
           </p>
           <button
             onClick={connect}
-            className="rounded-full bg-emerald-500 px-8 py-4 text-lg font-semibold text-neutral-950 active:scale-95 transition"
+            className="rounded-full bg-lock px-8 py-4 text-lg font-semibold text-ink transition active:scale-95"
           >
             Start camera
           </button>
@@ -288,31 +296,31 @@ function CameraClient() {
             autoPlay
             playsInline
             muted
-            className="w-full max-w-md rounded-2xl bg-black aspect-video object-cover"
+            className="aspect-video w-full max-w-md rounded-2xl border border-line bg-black object-cover"
           />
           <div className="flex flex-col items-center gap-2">
-            {status === 'starting-camera' && <p>Starting camera…</p>}
-            {status === 'waiting-desktop' && <p>Waiting for the desktop app…</p>}
-            {status === 'connecting' && <p>Connecting…</p>}
+            {status === 'starting-camera' && <p className="text-muted">Starting camera…</p>}
+            {status === 'waiting-desktop' && <p className="text-muted">Waiting for the desktop app…</p>}
+            {status === 'connecting' && <p className="text-muted">Connecting…</p>}
             {status === 'connected' && (
               <>
-                <p className="text-emerald-400 font-semibold">Connected to ReplaySwing</p>
-                <p className="text-neutral-400 text-sm max-w-xs">
+                <p className="font-display font-bold text-lock">Connected to ReplaySwing</p>
+                <p className="max-w-xs text-sm text-muted">
                   Keep this screen open and the phone plugged in or awake while you practice.
                 </p>
               </>
             )}
             {status === 'failed' && (
               <div className="max-w-sm space-y-2">
-                <p className="text-red-400 font-semibold">Couldn&apos;t connect</p>
-                <ul className="text-neutral-400 text-sm text-left list-disc pl-5 space-y-1">
+                <p className="font-display font-bold text-fire">Couldn&apos;t connect</p>
+                <ul className="list-disc space-y-1 pl-5 text-left text-sm text-muted">
                   <li>Make sure this phone is on the same Wi-Fi as your simulator PC (not cellular).</li>
                   <li>Guest networks often block devices from seeing each other.</li>
                   <li>Re-scan the QR code in the desktop app to try again.</li>
                 </ul>
                 <button
                   onClick={connect}
-                  className="rounded-full bg-emerald-500 px-6 py-3 font-semibold text-neutral-950"
+                  className="rounded-full bg-lock px-6 py-3 font-semibold text-ink"
                 >
                   Try again
                 </button>
@@ -322,7 +330,7 @@ function CameraClient() {
           {(status === 'connected' || status === 'waiting-desktop') && (
             <button
               onClick={flipCamera}
-              className="rounded-full border border-neutral-700 px-6 py-3 text-sm text-neutral-300"
+              className="rounded-full border border-line-bright px-6 py-3 text-sm text-muted transition-colors hover:text-fg"
             >
               Flip camera
             </button>

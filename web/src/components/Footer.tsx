@@ -20,14 +20,14 @@ const links = [
 
 export default function Footer() {
   return (
-    <footer className="border-t border-sand bg-cream py-12">
+    <footer className="border-t border-line bg-panel py-12">
       <div className="mx-auto max-w-7xl px-6">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
           <div>
-            <span className="font-serif text-lg font-bold text-espresso">ReplaySwing</span>
-            <p className="text-sm text-bronze mt-1">
-              Made with love for the golf sim community
-            </p>
+            <span className="font-display text-lg font-extrabold tracking-[0.12em] text-fg">
+              REPLAY<span className="text-lock">SWING</span>
+            </span>
+            <p className="mt-1 text-sm text-muted">Made for the golf sim community</p>
           </div>
 
           <nav className="flex flex-wrap items-center gap-6">
@@ -35,10 +35,8 @@ export default function Footer() {
               <a
                 key={link.label}
                 href={link.href}
-                {...(link.external
-                  ? { target: '_blank', rel: 'noopener noreferrer' }
-                  : {})}
-                className="inline-flex items-center gap-1.5 text-sm text-bronze hover:text-espresso transition-colors"
+                {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-fg"
               >
                 <link.icon size={14} />
                 {link.label}
@@ -47,8 +45,8 @@ export default function Footer() {
           </nav>
         </div>
 
-        <div className="mt-8 pt-6 border-t border-sand text-center">
-          <p className="text-xs text-bronze/60">
+        <div className="mt-8 border-t border-line pt-6 text-center">
+          <p className="font-mono text-xs text-faint">
             MIT License &middot; &copy; {new Date().getFullYear()} ReplaySwing
           </p>
         </div>

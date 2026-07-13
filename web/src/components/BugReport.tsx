@@ -41,31 +41,32 @@ export default function BugReport() {
   };
 
   const inputClasses =
-    'w-full bg-warm-white border border-sand rounded-xl px-4 py-3 text-espresso placeholder:text-bronze/40 focus:outline-none focus:ring-2 focus:ring-gold/40 focus:border-gold transition-colors text-sm';
+    'w-full bg-ink border border-line rounded-lg px-4 py-3 text-fg placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-lock/40 focus:border-lock transition-colors text-sm';
 
   return (
-    <section id="bug-report" className="py-20 md:py-28 bg-warm-white">
+    <section id="bug-report" className="border-t border-line bg-panel/40 py-20 md:py-28">
       <div className="mx-auto max-w-2xl px-6">
-        <div className="text-center mb-12">
-          <h2 className="font-serif text-4xl md:text-5xl font-bold text-espresso">
-            Report a Bug
+        <div className="mb-12 text-center">
+          <p className="mb-3 font-mono text-xs uppercase tracking-[0.2em] text-fire">Report a bug</p>
+          <h2 className="font-display text-4xl font-extrabold tracking-tight text-fg md:text-5xl">
+            Something broken?
           </h2>
-          <p className="mt-4 text-lg text-bronze">
-            Found something broken? Let us know and we&apos;ll fix it.
+          <p className="mt-4 text-lg text-muted">
+            Let us know and we&apos;ll fix it. Reports go straight to GitHub.
           </p>
         </div>
 
         {status === 'success' ? (
-          <div className="bg-cream rounded-2xl border border-green-accent/30 p-8 text-center">
-            <CheckCircle size={48} className="text-green-accent mx-auto mb-4" />
-            <h3 className="font-semibold text-xl text-espresso mb-2">Bug Report Submitted</h3>
-            <p className="text-bronze">
+          <div className="rounded-2xl border border-lock/30 bg-panel p-8 text-center">
+            <CheckCircle size={48} className="mx-auto mb-4 text-lock" />
+            <h3 className="mb-2 font-display text-xl font-bold text-fg">Bug report submitted</h3>
+            <p className="text-muted">
               Thanks for helping improve ReplaySwing! A GitHub issue has been created and
               we&apos;ll look into it.
             </p>
             <button
               onClick={() => setStatus('idle')}
-              className="mt-6 text-sm text-gold hover:text-espresso transition-colors font-medium"
+              className="mt-6 text-sm font-medium text-lock-bright transition-colors hover:text-fg"
             >
               Submit another report
             </button>
@@ -85,8 +86,8 @@ export default function BugReport() {
             />
 
             <div>
-              <label htmlFor="bug-title" className="block text-sm font-medium text-espresso mb-2">
-                Title <span className="text-red-400">*</span>
+              <label htmlFor="bug-title" className="mb-2 block text-sm font-medium text-fg">
+                Title <span className="text-fire">*</span>
               </label>
               <input
                 id="bug-title"
@@ -100,8 +101,8 @@ export default function BugReport() {
             </div>
 
             <div>
-              <label htmlFor="bug-description" className="block text-sm font-medium text-espresso mb-2">
-                Description <span className="text-red-400">*</span>
+              <label htmlFor="bug-description" className="mb-2 block text-sm font-medium text-fg">
+                Description <span className="text-fire">*</span>
               </label>
               <textarea
                 id="bug-description"
@@ -115,7 +116,7 @@ export default function BugReport() {
             </div>
 
             <div>
-              <label htmlFor="bug-steps" className="block text-sm font-medium text-espresso mb-2">
+              <label htmlFor="bug-steps" className="mb-2 block text-sm font-medium text-fg">
                 Steps to Reproduce
               </label>
               <textarea
@@ -129,7 +130,7 @@ export default function BugReport() {
             </div>
 
             <div>
-              <label htmlFor="bug-expected" className="block text-sm font-medium text-espresso mb-2">
+              <label htmlFor="bug-expected" className="mb-2 block text-sm font-medium text-fg">
                 Expected Behavior
               </label>
               <textarea
@@ -143,16 +144,16 @@ export default function BugReport() {
             </div>
 
             {status === 'error' && (
-              <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
-                <AlertCircle size={20} className="text-red-500 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-700">{errorMessage}</p>
+              <div className="flex items-start gap-3 rounded-lg border border-fire/40 bg-fire/10 p-4">
+                <AlertCircle size={20} className="mt-0.5 flex-shrink-0 text-fire" />
+                <p className="text-sm text-fire">{errorMessage}</p>
               </div>
             )}
 
             <button
               type="submit"
               disabled={status === 'loading'}
-              className="inline-flex items-center gap-2 bg-espresso hover:bg-charcoal text-white font-semibold px-6 py-3 rounded transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 rounded-lg bg-lock px-6 py-3 font-semibold text-ink transition-colors hover:bg-lock-bright disabled:cursor-not-allowed disabled:opacity-60"
             >
               {status === 'loading' ? (
                 <>
